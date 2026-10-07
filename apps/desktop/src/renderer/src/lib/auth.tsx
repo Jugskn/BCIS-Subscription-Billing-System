@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import type { PermissionCode, SessionUser } from "@bcis/shared";
-import { ApiClient } from "./api";
+import { ApiClient, DEFAULT_API_BASE_URL } from "./api";
 
 type AuthState = {
   user: SessionUser | null;
@@ -30,7 +30,7 @@ const USER_KEY = "bcis.user";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [apiBaseUrl, setApiBaseUrl] = useState("http://127.0.0.1:3001");
+  const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_API_BASE_URL);
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [locked, setLocked] = useState(false);

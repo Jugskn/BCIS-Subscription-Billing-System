@@ -73,7 +73,7 @@ Suspension record: reason, effective date, approved by, notes.
 After qualifying payment: reconnection workflow with optional fee, technician assignment, request date, completion date.
 All service state changes stay in service history.
 3.11 Receipts and Reports
-Unique receipt numbers; voided receipts stay in history; numbers never reused.
+Unique receipt numbers; voided receipts stay in history; numbers never reused.cw1
 Reports: daily/weekly/monthly/annual collection; payment-method summaries; billing vs collection; revenue by plan/service/area; AR; subscriber master list; subscriber ledger and SOA; collector assignment/collection/remittance/shortage-overage/performance; payment adjustment, reversal, voided receipt, user activity, audit.
 Export to PDF and XLSX (CSV optional).
 4. UI, Security, Reliability

@@ -13,12 +13,16 @@ import {
 import { createDb } from "./client.js";
 import {
   applicationSettings,
+  collectionAreas,
   permissions,
   rolePermissions,
   roles,
+  servicePlans,
+  serviceTypes,
   userRoles,
   users,
 } from "./schema/index.js";
+import { pesosToCentavos } from "@bcis/shared";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 config({ path: resolve(root, ".env") });
@@ -69,6 +73,7 @@ const roleDescriptions: Record<RoleName, string> = {
   Administrator: "Subscribers, billing, collections, operational reports",
   Cashier: "Subscriber search, payments, balances, GCash verification",
   "Collection Supervisor": "Areas, batches, remittance, reconciliation",
+  Collector: "Field collection assignment; route sheet access",
   Auditor: "Reports, receivables, audit trails (read-only)",
   Technician: "Service account and suspension/reconnection info",
   Viewer: "Dashboards and reports, no mutations",
@@ -173,6 +178,74 @@ async function seedOwner(roleIds: Map<string, string>) {
   return userId;
 }
 
+async function seedServiceCatalog() {
+  const types = [
+    { code: "INTERNET", name: "Internet" },
+    { code: "CABLE", name: "Cable" },
+    { code: "COMBO", name: "Combo" },
+  ];
+  const typeIds = new Map<string, string>();
+  for (const st of types) {
+    const existing = await db
+      .select()
+      .from(serviceTypes)
+      .where(eq(serviceTypes.code, st.code))
+      .limit(1);
+    if (existing[0]) {
+      typeIds.set(st.code, existing[0].id);
+      continue;
+    }
+    const [row] = await db.insert(serviceTypes).values(st).returning();
+    if (!row) throw new Error(`Failed to seed service type ${st.code}`);
+    typeIds.set(st.code, row.id);
+  }
+
+  const plans: Array<{
+    code: string;
+    name: string;
+    type: string;
+    price: string;
+    speedMbps?: number;
+    channelCount?: number;
+  }> = [
+    { code: "NET-50", name: "Internet 50 Mbps", type: "INTERNET", price: "999", speedMbps: 50 },
+    { code: "NET-100", name: "Internet 100 Mbps", type: "INTERNET", price: "1499", speedMbps: 100 },
+    { code: "NET-200", name: "Internet 200 Mbps", type: "INTERNET", price: "1999", speedMbps: 200 },
+    { code: "CBL-BASIC", name: "Cable Basic", type: "CABLE", price: "599", channelCount: 50 },
+    { code: "CBL-PLUS", name: "Cable Plus", type: "CABLE", price: "899", channelCount: 90 },
+    { code: "COMBO-1", name: "Combo Starter", type: "COMBO", price: "1299", speedMbps: 50, channelCount: 50 },
+    { code: "COMBO-2", name: "Combo Premium", type: "COMBO", price: "1799", speedMbps: 100, channelCount: 90 },
+  ];
+
+  for (const p of plans) {
+    const typeId = typeIds.get(p.type);
+    if (!typeId) continue;
+    await db
+      .insert(servicePlans)
+      .values({
+        serviceTypeId: typeId,
+        code: p.code,
+        name: p.name,
+        priceCentavos: pesosToCentavos(p.price),
+        speedMbps: p.speedMbps ?? null,
+        channelCount: p.channelCount ?? null,
+        isActive: true,
+      })
+      .onConflictDoNothing({ target: servicePlans.code });
+  }
+
+  const areas = [
+    { code: "MAL-N", name: "Malaybalay North", description: "Northern barangays" },
+    { code: "MAL-S", name: "Malaybalay South", description: "Southern barangays" },
+    { code: "VAL-C", name: "Valencia Central", description: "Valencia town proper" },
+  ];
+  for (const a of areas) {
+    await db.insert(collectionAreas).values(a).onConflictDoNothing({
+      target: collectionAreas.code,
+    });
+  }
+}
+
 async function seedSettings(ownerId: string) {
   const defaults: Array<{ key: string; value: unknown }> = [
     { key: "grace_days", value: 5 },
@@ -199,6 +272,7 @@ try {
   const roleIds = await upsertRoles();
   await seedMatrix(roleIds, permissionIds);
   const ownerId = await seedOwner(roleIds);
+  await seedServiceCatalog();
   await seedSettings(ownerId);
   console.log(`Seed complete. Owner username: ${ownerUsername}`);
 } finally {

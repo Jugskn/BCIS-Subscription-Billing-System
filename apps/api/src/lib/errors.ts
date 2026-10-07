@@ -1,20 +1,43 @@
+export type ValidationIssue = { field: string; message: string };
+
+export function zodValidationIssues(error: {
+  issues: Array<{ path: PropertyKey[]; message: string }>;
+}): ValidationIssue[] {
+  return error.issues.map((issue) => ({
+    field: issue.path.map(String).join(".") || "_root",
+    message: issue.message,
+  }));
+}
+
 export class AppError extends Error {
   readonly statusCode: number;
   readonly code: string;
   readonly expose: boolean;
+  readonly issues?: ValidationIssue[];
 
   constructor(
     statusCode: number,
     code: string,
     message: string,
-    options?: { expose?: boolean; cause?: unknown },
+    options?: { expose?: boolean; cause?: unknown; issues?: ValidationIssue[] },
   ) {
     super(message, { cause: options?.cause });
     this.name = "AppError";
     this.statusCode = statusCode;
     this.code = code;
     this.expose = options?.expose ?? statusCode < 500;
+    this.issues = options?.issues;
   }
+}
+
+/** Prefer for Zod safeParse failures so the client gets field-level issues. */
+export function validationError(
+  message: string,
+  zodError: { issues: Array<{ path: PropertyKey[]; message: string }> },
+): AppError {
+  return new AppError(400, "VALIDATION_ERROR", message, {
+    issues: zodValidationIssues(zodError),
+  });
 }
 
 export function isAppError(error: unknown): error is AppError {

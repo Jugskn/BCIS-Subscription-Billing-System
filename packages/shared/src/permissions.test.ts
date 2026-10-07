@@ -13,6 +13,7 @@ describe("ROLE_PERMISSION_MATRIX (SPEC 3.1 / 4.4)", () => {
       "Administrator",
       "Cashier",
       "Collection Supervisor",
+      "Collector",
       "Auditor",
       "Technician",
       "Viewer",
@@ -58,6 +59,7 @@ describe("ROLE_PERMISSION_MATRIX (SPEC 3.1 / 4.4)", () => {
         "subscriber.view",
         "payment.create",
         "gcash.verify",
+        "gcash.reject",
         "receivable.view",
       ]),
     );

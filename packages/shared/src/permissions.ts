@@ -32,6 +32,7 @@ export const ROLES = [
   "Administrator",
   "Cashier",
   "Collection Supervisor",
+  "Collector",
   "Auditor",
   "Technician",
   "Viewer",
@@ -71,6 +72,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleName, PermissionCode[]> = {
     "subscriber.view",
     "payment.create",
     "gcash.verify",
+    "gcash.reject",
     "receivable.view",
   ],
   "Collection Supervisor": [
@@ -83,6 +85,8 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleName, PermissionCode[]> = {
     "report.view",
     "report.export",
   ],
+  /** Field staff assigned to subscribers/areas (SPEC demo "Collectors"). */
+  Collector: ["subscriber.view", "receivable.view"],
   Auditor: [
     "subscriber.view",
     "receivable.view",

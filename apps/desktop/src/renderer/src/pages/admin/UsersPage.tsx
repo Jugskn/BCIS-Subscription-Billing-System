@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/toast";
 import { useAuth } from "@/lib/auth";
-import { ApiClientError } from "@/lib/api";
+import { ApiClientError, applyApiFieldErrors } from "@/lib/api";
 
 const createSchema = z.object({
   username: z.string().min(3),
@@ -32,9 +33,11 @@ type CreateForm = z.infer<typeof createSchema>;
 export function UsersPage() {
   const { api } = useAuth();
   const qc = useQueryClient();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [assignUser, setAssignUser] = useState<UserListItem | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
 
   const usersQuery = useQuery({
     queryKey: ["users"],
@@ -59,7 +62,7 @@ export function UsersPage() {
       await qc.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (err) => {
-      setError(err instanceof ApiClientError ? err.message : "Create failed.");
+      setError(applyApiFieldErrors(form.setError, err));
     },
   });
 
@@ -67,6 +70,12 @@ export function UsersPage() {
     mutationFn: (id: string) => api.deactivateUser(id),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success("User deactivated.");
+    },
+    onError: (err) => {
+      toast.error(
+        err instanceof ApiClientError ? err.message : "Cannot reach the server",
+      );
     },
   });
 
@@ -75,7 +84,14 @@ export function UsersPage() {
       api.assignRoles(id, roleNames),
     onSuccess: async () => {
       setAssignUser(null);
+      setAssignError(null);
       await qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Roles updated.");
+    },
+    onError: (err) => {
+      setAssignError(
+        err instanceof ApiClientError ? err.message : "Cannot reach the server",
+      );
     },
   });
 
@@ -156,14 +172,29 @@ export function UsersPage() {
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
                 <Input id="username" {...form.register("username")} />
+                {form.formState.errors.username ? (
+                  <p className="text-sm text-danger">
+                    {form.formState.errors.username.message}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="fullName">Full name</Label>
                 <Input id="fullName" {...form.register("fullName")} />
+                {form.formState.errors.fullName ? (
+                  <p className="text-sm text-danger">
+                    {form.formState.errors.fullName.message}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input id="password" type="password" {...form.register("password")} />
+                {form.formState.errors.password ? (
+                  <p className="text-sm text-danger">
+                    {form.formState.errors.password.message}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label>Roles</Label>
@@ -211,7 +242,15 @@ export function UsersPage() {
         searchPlaceholder="Search users…"
       />
 
-      <Dialog open={Boolean(assignUser)} onOpenChange={(v) => !v && setAssignUser(null)}>
+      <Dialog
+        open={Boolean(assignUser)}
+        onOpenChange={(v) => {
+          if (!v) {
+            setAssignUser(null);
+            setAssignError(null);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign roles — {assignUser?.username}</DialogTitle>
@@ -219,9 +258,11 @@ export function UsersPage() {
           {assignUser ? (
             <AssignRolesForm
               initial={assignUser.roles}
-              onSave={(roleNames) =>
-                assignMutation.mutate({ id: assignUser.id, roleNames })
-              }
+              error={assignError}
+              onSave={(roleNames) => {
+                setAssignError(null);
+                assignMutation.mutate({ id: assignUser.id, roleNames });
+              }}
               busy={assignMutation.isPending}
             />
           ) : null}
@@ -235,10 +276,12 @@ function AssignRolesForm({
   initial,
   onSave,
   busy,
+  error,
 }: {
   initial: string[];
   onSave: (roles: string[]) => void;
   busy: boolean;
+  error: string | null;
 }) {
   const [roleNames, setRoleNames] = useState(initial);
   return (
@@ -261,6 +304,7 @@ function AssignRolesForm({
           </label>
         ))}
       </div>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       <Button
         type="button"
         disabled={busy || roleNames.length === 0}

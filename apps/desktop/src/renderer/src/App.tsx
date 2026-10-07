@@ -6,6 +6,37 @@ import { LockScreen } from "@/pages/LockScreen";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { AdministrationPage } from "@/pages/admin/AdministrationPage";
 import { UsersPage } from "@/pages/admin/UsersPage";
+import { AreasPage } from "@/pages/collections/AreasPage";
+import { PlansPage } from "@/pages/services/PlansPage";
+import { NewSubscriberPage } from "@/pages/subscribers/NewSubscriberPage";
+import { ServiceAccountsPage } from "@/pages/subscribers/ServiceAccountsPage";
+import { SubscriberProfilePage } from "@/pages/subscribers/SubscriberProfilePage";
+import { SubscribersPage } from "@/pages/subscribers/SubscribersPage";
+import { CurrentBillingPage } from "@/pages/billing/CurrentBillingPage";
+import { GenerateBillingPage } from "@/pages/billing/GenerateBillingPage";
+import { InvoiceDetailPage } from "@/pages/billing/InvoiceDetailPage";
+import { InvoicesPage } from "@/pages/billing/InvoicesPage";
+import { ReceivePaymentPage } from "@/pages/payments/ReceivePaymentPage";
+import { PaymentHistoryPage } from "@/pages/payments/PaymentHistoryPage";
+import { GCashVerificationPage } from "@/pages/payments/GCashVerificationPage";
+import { ReceiptPrintPage } from "@/pages/payments/ReceiptPrintPage";
+import { DashboardPage } from "@/pages/DashboardPage";
+import { ReportsHubPage } from "@/pages/reports/ReportsHubPage";
+import {
+  ArAgingReportPage,
+  AuditReportPage,
+  BillingVsCollectionReportPage,
+  CollectionsReportPage,
+  CollectorReportPage,
+  LedgerReportPage,
+  PaymentMethodsReportPage,
+  ReversalsReportPage,
+  RevenueReportPage,
+  SubscriberMasterReportPage,
+} from "@/pages/reports/report-pages";
+import { SoaPrintPage } from "@/pages/print/SoaPrintPage";
+import { RouteSheetPrintPage } from "@/pages/print/RouteSheetPrintPage";
+import { AgingPage } from "@/pages/receivables/AgingPage";
 
 function Placeholder({
   title,
@@ -25,69 +56,87 @@ function ProtectedRoutes() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route
-          index
-          element={
-            <Placeholder
-              title="Dashboard"
-              description="Operational overview will appear here."
-            />
-          }
-        />
+        <Route index element={<DashboardPage />} />
 
         <Route
           path="subscribers"
           element={
-            <Placeholder
-              title="Subscribers"
-              description="All subscribers."
-            />
+            can("subscriber.view") ? (
+              <SubscribersPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
           path="subscribers/new"
           element={
-            <Placeholder
-              title="New Subscriber"
-              description="Create a subscriber record."
-            />
+            can("subscriber.create") ? (
+              <NewSubscriberPage />
+            ) : (
+              <Navigate to="/subscribers" replace />
+            )
+          }
+        />
+        <Route
+          path="subscribers/:id"
+          element={
+            can("subscriber.view") ? (
+              <SubscriberProfilePage />
+            ) : (
+              <Navigate to="/subscribers" replace />
+            )
           }
         />
         <Route
           path="subscribers/service-accounts"
           element={
-            <Placeholder
-              title="Service Accounts"
-              description="Service accounts across subscribers."
-            />
+            can("subscriber.view") ? (
+              <ServiceAccountsPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
 
         <Route
           path="billing"
           element={
-            <Placeholder
-              title="Current Billing"
-              description="Current billing cycle overview."
-            />
+            can("billing.generate") ? (
+              <CurrentBillingPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
           path="billing/generate"
           element={
-            <Placeholder
-              title="Generate Billing"
-              description="Generate monthly invoices."
-            />
+            can("billing.generate") ? (
+              <GenerateBillingPage />
+            ) : (
+              <Navigate to="/billing" replace />
+            )
           }
         />
         <Route
           path="billing/invoices"
           element={
-            <Placeholder
-              title="Invoices"
-              description="Invoice list and void workflows."
-            />
+            can("receivable.view") ? (
+              <InvoicesPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="billing/invoices/:id"
+          element={
+            can("receivable.view") ? (
+              <InvoiceDetailPage />
+            ) : (
+              <Navigate to="/billing/invoices" replace />
+            )
           }
         />
 
@@ -95,31 +144,33 @@ function ProtectedRoutes() {
         <Route
           path="payments/receive"
           element={
-            <Placeholder
-              title="Receive Payment"
-              description="Cashier payment posting."
-            />
+            can("payment.create") ? (
+              <ReceivePaymentPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
           path="payments/history"
           element={
-            <Placeholder
-              title="Payment History"
-              description="Posted payment history."
-            />
+            can("receivable.view") ? (
+              <PaymentHistoryPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
           path="payments/gcash"
           element={
-            <Placeholder
-              title="GCash Verification"
-              description="Verify or reject GCash proofs."
-            />
+            can("gcash.verify") || can("payment.create") ? (
+              <GCashVerificationPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
-
         <Route
           path="collections"
           element={<Navigate to="/collections/collectors" replace />}
@@ -136,10 +187,11 @@ function ProtectedRoutes() {
         <Route
           path="collections/areas"
           element={
-            <Placeholder
-              title="Areas & Routes"
-              description="Collection areas and routes."
-            />
+            can("subscriber.view") ? (
+              <AreasPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
@@ -186,10 +238,11 @@ function ProtectedRoutes() {
         <Route
           path="receivables/aging"
           element={
-            <Placeholder
-              title="AR Aging"
-              description="Aging buckets by days past due."
-            />
+            can("receivable.view") ? (
+              <AgingPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
@@ -205,19 +258,121 @@ function ProtectedRoutes() {
         <Route
           path="services"
           element={
-            <Placeholder
-              title="Services"
-              description="Plans and technician service work."
-            />
+            can("service.manage") ? (
+              <PlansPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
           path="reports"
           element={
-            <Placeholder
-              title="Reports"
-              description="Operational and financial reports."
-            />
+            can("report.view") ? (
+              <ReportsHubPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/collections"
+          element={
+            can("report.view") ? (
+              <CollectionsReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/payment-methods"
+          element={
+            can("report.view") ? (
+              <PaymentMethodsReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/billing-vs-collection"
+          element={
+            can("report.view") ? (
+              <BillingVsCollectionReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/revenue"
+          element={
+            can("report.view") ? (
+              <RevenueReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/ar-aging"
+          element={
+            can("report.view") ? (
+              <ArAgingReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/subscribers"
+          element={
+            can("report.view") ? (
+              <SubscriberMasterReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/ledger"
+          element={
+            can("report.view") ? (
+              <LedgerReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/collectors"
+          element={
+            can("report.view") ? (
+              <CollectorReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/reversals"
+          element={
+            can("report.view") ? (
+              <ReversalsReportPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="reports/audit"
+          element={
+            can("audit.view") ? (
+              <AuditReportPage />
+            ) : (
+              <Navigate to="/reports" replace />
+            )
           }
         />
 
@@ -238,6 +393,36 @@ function ProtectedRoutes() {
           }
         />
       </Route>
+      <Route
+        path="payments/receipts/:id"
+        element={
+          can("receivable.view") ? (
+            <ReceiptPrintPage />
+          ) : (
+            <Navigate to="/" replace />
+          )
+        }
+      />
+      <Route
+        path="print/soa/:subscriberId"
+        element={
+          can("receivable.view") ? (
+            <SoaPrintPage />
+          ) : (
+            <Navigate to="/" replace />
+          )
+        }
+      />
+      <Route
+        path="print/route-sheet"
+        element={
+          can("report.view") ? (
+            <RouteSheetPrintPage />
+          ) : (
+            <Navigate to="/" replace />
+          )
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

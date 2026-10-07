@@ -2,9 +2,11 @@ import type { FastifyPluginAsync } from "fastify";
 import {
   assignRolesSchema,
   createUserSchema,
+  optionsSearchQuerySchema,
   paginationQuerySchema,
 } from "@bcis/shared";
-import { AppError } from "../lib/errors.js";
+import { validationError } from "../lib/errors.js";
+import { listCollectorOptions } from "../services/options-service.js";
 import {
   assignUserRoles,
   createUser,
@@ -14,12 +16,24 @@ import {
 
 const userRoutes: FastifyPluginAsync = async (app) => {
   app.get(
+    "/collectors/options",
+    { preHandler: [app.requirePermission("subscriber.view")] },
+    async (request) => {
+      const parsed = optionsSearchQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        throw validationError("Invalid options query.", parsed.error);
+      }
+      return listCollectorOptions(app.db, parsed.data.search);
+    },
+  );
+
+  app.get(
     "/users",
     { preHandler: [app.requirePermission("user.manage")] },
     async (request) => {
       const parsed = paginationQuerySchema.safeParse(request.query);
       if (!parsed.success) {
-        throw new AppError(400, "VALIDATION_ERROR", "Invalid pagination query.");
+        throw validationError("Invalid pagination query.", parsed.error);
       }
       return listUsers(app.db, parsed.data);
     },
@@ -31,10 +45,9 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const parsed = createUserSchema.safeParse(request.body);
       if (!parsed.success) {
-        throw new AppError(
-          400,
-          "VALIDATION_ERROR",
+        throw validationError(
           "Please check the user details and try again.",
+          parsed.error,
         );
       }
       const user = await createUser(app.db, request.user.id, parsed.data);
@@ -59,7 +72,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
       const { id } = request.params as { id: string };
       const parsed = assignRolesSchema.safeParse(request.body);
       if (!parsed.success) {
-        throw new AppError(400, "VALIDATION_ERROR", "Select at least one role.");
+        throw validationError("Select at least one role.", parsed.error);
       }
       await assignUserRoles(app.db, request.user.id, id, parsed.data.roleNames);
       return { ok: true };

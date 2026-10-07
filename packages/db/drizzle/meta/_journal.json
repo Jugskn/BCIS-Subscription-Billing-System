@@ -8,6 +8,27 @@
       "when": 1728300000000,
       "tag": "0000_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1728386400000,
+      "tag": "0001_subscribers_services",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1728472800000,
+      "tag": "0002_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1728559200000,
+      "tag": "0003_payments",
+      "breakpoints": true
     }
   ]
 }

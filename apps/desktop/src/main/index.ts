@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { join } from "node:path";
 
+/** Keep in sync with renderer DEFAULT_API_BASE_URL — always 127.0.0.1, not localhost. */
 const API_BASE_URL = process.env.BCIS_API_BASE_URL ?? "http://127.0.0.1:3001";
 
 function createWindow(): void {

@@ -8,6 +8,7 @@ release/*
 storage/attachments/*
 storage/backups/*
 !storage/**/.gitkeep
+apps/api/uploads/
 .DS_Store
 coverage/
 *.tsbuildinfo

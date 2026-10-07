@@ -17,5 +17,10 @@ export default defineConfig({
       },
     },
     plugins: [react(), tailwindcss()],
+    // Match API client host (127.0.0.1) so Origin and BCIS_API_BASE_URL stay aligned.
+    server: {
+      host: "127.0.0.1",
+      port: 5173,
+    },
   },
 });

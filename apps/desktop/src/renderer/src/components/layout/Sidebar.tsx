@@ -124,7 +124,19 @@ const NAV: NavItem[] = [
     ],
   },
   { to: "/services", label: "Services", icon: Wrench, permission: "service.manage" },
-  { to: "/reports", label: "Reports", icon: FileBarChart, permission: "report.view" },
+  {
+    to: "/reports",
+    label: "Reports",
+    icon: FileBarChart,
+    permission: "report.view",
+    children: [
+      { to: "/reports", label: "All reports", permission: "report.view" },
+      { to: "/reports/collections", label: "Collections", permission: "report.view" },
+      { to: "/reports/ar-aging", label: "AR Aging", permission: "report.view" },
+      { to: "/reports/ledger", label: "Ledger / SOA", permission: "report.view" },
+      { to: "/reports/audit", label: "Audit log", permission: "audit.view" },
+    ],
+  },
   {
     to: "/administration",
     label: "Administration",

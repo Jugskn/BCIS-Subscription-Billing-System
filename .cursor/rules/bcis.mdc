@@ -1,0 +1,38 @@
+# BCIS Subscription Billing & Collection System
+
+Solo lab project. Simple but functionally complete. Financial correctness > visual polish.
+
+## Stack (do not add other major libraries)
+pnpm monorepo: apps/desktop (Electron + electron-vite + React + TS strict + Tailwind + shadcn/ui + TanStack Table/Query + React Hook Form), apps/api (Fastify + Pino), packages/shared (Zod schemas, money utils), packages/db (Drizzle ORM + PostgreSQL migrations + seeds). Reports: ExcelJS + pdfmake. Tests: Vitest. Install latest stable versions; do not pin to guessed versions.
+
+## Hard rules (violations are grading failures)
+- Renderer NEVER touches the DB. Electron: contextIsolation=true, nodeIntegration=false, narrow typed preload API. Renderer -> API over HTTP only.
+- ALL money is integer centavos (bigint). No floats. Format only in the UI.
+- Business logic lives in apps/api services/domain, never in React.
+- Every external input validated with Zod (shared package).
+- Server-side permission check (preHandler) on EVERY route. Hiding buttons is not authorization.
+- Passwords hashed with argon2 or bcrypt. Never log secrets.
+- Posted payments/invoices are NEVER deleted or edited. Use reversal/void/adjustment rows linked to the original.
+- Ledger is append-only. Running balance is derived (window function), not stored.
+- audit_logs is insert-only (no update/delete routes; add DB trigger blocking UPDATE/DELETE). Log actor, action, time, reason, old/new values.
+- Multi-step financial posting runs in ONE DB transaction with row locks (SELECT ... FOR UPDATE). Receipt numbers come from a locked counter row; voided numbers are never reused.
+- Every schema change = Drizzle migration.
+- Server-side pagination on all list endpoints.
+
+## Domain decisions
+- Advance payment: allocate oldest-first; remainder stays as unapplied credit on the subscriber, auto-applied when the next invoice is generated.
+- Default allocation: oldest unpaid invoice first. Manual allocation needs permission payment.allocate_manual.
+- Duplicate GCash reference: hard block (unique among PENDING/VERIFIED); REJECTED may be resubmitted.
+- GCash: proof upload creates PENDING record only. Nothing posts until an authorized user VERIFIES.
+- Duplicate billing: partial unique index on (service_account_id, billing_period) where status != VOID; generator is idempotent.
+- Invoice rate is snapshotted in invoice_items; plan price changes affect future invoices only.
+- Overdue = today > due_date + grace_days (setting). Aging buckets by days past due: Current, 1-30, 31-60, 61-90, 90+. Aging totals MUST equal sum of open invoice balances.
+- Batch states: OPEN -> IN_PROGRESS -> SUBMITTED -> REMITTED -> RECONCILED -> CLOSED, enforced state machine. Nonzero cash difference requires recorded shortage/overage + reason; cannot close as balanced.
+- Penalties: settings flag, off by default.
+
+## UI design (simple, modern, minimal)
+Colors: burgundy #7A1F2B (primary/active), burgundy-dark #5E1520 (hover), ink #111111, canvas #FAFAF9, surface #FFFFFF, border #E7E5E4, muted #6B6B6B. Status: success #059669, warning #D97706, danger #DC2626 (keep danger distinct from burgundy).
+Font Inter. White left sidebar, burgundy active-item indicator. 14px+ body text, generous spacing, no gradients, no animations, no decorative cards. Money right-aligned with tabular-nums. Status badges = text + color. One reusable DataTable (sticky header, search, filters, sort, pagination, export) and one form pattern used everywhere. Print views are separate clean layouts without nav.
+
+## Workflow
+Implement only the requested prompt scope. Write domain functions as pure functions with Vitest tests first. Run typecheck + lint + tests before finishing. Keep docs/bug-log.md and docs/decisions.md updated (short entries). Synthetic data only.

@@ -9,3 +9,12 @@ storage/attachments/*
 storage/backups/*
 !storage/**/.gitkeep
 .DS_Store
+coverage/
+*.tsbuildinfo
+.vite/
+apps/desktop/tsconfig*.tsbuildinfo
+packages/*/tsconfig*.tsbuildinfo
+
+apps/desktop/out/
+apps/api/dist/
+packages/*/dist/

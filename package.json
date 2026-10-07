@@ -1,0 +1,6 @@
+{
+  "name": "bcis-subscription-billing-system",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@latest"
+}

@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 import { ApiClientError } from "@/lib/api";
 
-const METHODS = ["Cash", "BankTransfer", "Cheque", "Other"] as const;
+const METHODS = ["Cash", "GCash", "BankTransfer", "Cheque", "Other"] as const;
 
 export function ReceivePaymentPage() {
   const { api, can } = useAuth();
@@ -25,6 +25,7 @@ export function ReceivePaymentPage() {
   const [notes, setNotes] = useState("");
   const [preview, setPreview] = useState<AllocationPreviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isGCash = method === "GCash";
 
   const loadSubscribers = useCallback(
     async (search: string): Promise<AsyncComboboxOption[]> => {
@@ -165,9 +166,11 @@ export function ReceivePaymentPage() {
                 id="method"
                 className="flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm"
                 value={method}
-                onChange={(e) =>
-                  setMethod(e.target.value as (typeof METHODS)[number])
-                }
+                onChange={(e) => {
+                  const next = e.target.value as (typeof METHODS)[number];
+                  setMethod(next);
+                  if (next === "GCash") setPreview(null);
+                }}
               >
                 {METHODS.map((m) => (
                   <option key={m} value={m}>
@@ -201,31 +204,46 @@ export function ReceivePaymentPage() {
           {error ? <p className="text-sm text-danger">{error}</p> : null}
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!amount || previewMutation.isPending}
-              onClick={() => previewMutation.mutate()}
-            >
-              Preview allocation
-            </Button>
-            <Button
-              type="button"
-              disabled={!preview || postMutation.isPending}
-              onClick={() => postMutation.mutate()}
-            >
-              Post payment
-            </Button>
-            <p className="self-center text-sm text-muted">
-              GCash proofs go through{" "}
-              <Link to="/payments/gcash" className="text-burgundy hover:underline">
-                GCash Verification
-              </Link>
-              .
-            </p>
+            {isGCash ? (
+              <>
+                <Button
+                  type="button"
+                  disabled={!subscriberId}
+                  onClick={() =>
+                    navigate("/payments/gcash", {
+                      state: { subscriberId, subscriberLabel, amount },
+                    })
+                  }
+                >
+                  Continue to GCash Verification
+                </Button>
+                <p className="self-center text-sm text-muted">
+                  GCash must be recorded as a pending proof, then verified — it cannot be
+                  posted directly here.
+                </p>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!amount || previewMutation.isPending}
+                  onClick={() => previewMutation.mutate()}
+                >
+                  Preview allocation
+                </Button>
+                <Button
+                  type="button"
+                  disabled={!preview || postMutation.isPending}
+                  onClick={() => postMutation.mutate()}
+                >
+                  Post payment
+                </Button>
+              </>
+            )}
           </div>
 
-          {preview ? (
+          {preview && !isGCash ? (
             <div className="space-y-2">
               <h2 className="text-sm font-semibold text-ink">Allocation preview</h2>
               <table className="min-w-full text-sm">

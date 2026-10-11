@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { SubscriberListItem } from "@bcis/shared";
+import { formatPhilippineMobile, type SubscriberListItem } from "@bcis/shared";
 import { DataTable } from "@/components/data-table";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,11 @@ export function SubscribersPage() {
         ),
       },
       { accessorKey: "fullName", header: "Name" },
-      { accessorKey: "contactPhone", header: "Contact" },
+      {
+        accessorKey: "contactPhone",
+        header: "Contact",
+        cell: ({ row }) => formatPhilippineMobile(row.original.contactPhone) || "—",
+      },
       { accessorKey: "address", header: "Address" },
       { accessorKey: "collectionAreaName", header: "Area" },
       { accessorKey: "dueDay", header: "Due day" },

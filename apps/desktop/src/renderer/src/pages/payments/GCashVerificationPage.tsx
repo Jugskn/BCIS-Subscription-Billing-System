@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { PaymentDetail, PaymentListItem } from "@bcis/shared";
 import { formatCentavos } from "@bcis/shared";
 import {
@@ -13,9 +13,17 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 import { ApiClientError } from "@/lib/api";
 
+type GCashHandoffState = {
+  subscriberId?: string;
+  subscriberLabel?: string;
+  amount?: string;
+};
+
 export function GCashVerificationPage() {
   const { api, can } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const handoff = (location.state as GCashHandoffState | null) ?? null;
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -23,9 +31,11 @@ export function GCashVerificationPage() {
   const [proofUrl, setProofUrl] = useState<string | null>(null);
 
   // Record form state
-  const [subscriberId, setSubscriberId] = useState("");
-  const [subscriberLabel, setSubscriberLabel] = useState("");
-  const [amount, setAmount] = useState("");
+  const [subscriberId, setSubscriberId] = useState(handoff?.subscriberId ?? "");
+  const [subscriberLabel, setSubscriberLabel] = useState(
+    handoff?.subscriberLabel ?? "",
+  );
+  const [amount, setAmount] = useState(handoff?.amount ?? "");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [senderName, setSenderName] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);

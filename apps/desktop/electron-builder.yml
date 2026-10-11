@@ -1,0 +1,28 @@
+appId: ph.bcis.subscription-billing
+productName: BCIS Subscription Billing
+copyright: Copyright © BCIS Lab
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: resources/bcis-config.json
+    to: bcis-config.json
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: BCIS-Subscription-Billing-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: BCIS Billing
+  installerLanguages:
+    - en_US
+  # Editable API URL: after install, edit bcis-config.json beside the exe
+  # or %APPDATA%/bcis-subscription-billing/bcis-config.json

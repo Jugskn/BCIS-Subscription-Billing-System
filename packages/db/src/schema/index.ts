@@ -9,3 +9,5 @@ export * from "./service-accounts.js";
 export * from "./sequences.js";
 export * from "./billing.js";
 export * from "./payments.js";
+export * from "./collection-batches.js";
+export * from "./operations.js";

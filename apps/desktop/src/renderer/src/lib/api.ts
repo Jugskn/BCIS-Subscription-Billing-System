@@ -2,6 +2,7 @@ import type {
   AllocationPreviewResponse,
   AreaOption,
   ArAgingSummaryDto,
+  BackupListItem,
   BillingCycleSummary,
   BillingPreview,
   CollectionAreaListItem,
@@ -79,6 +80,168 @@ type Paginated<T> = {
   total: number;
 };
 
+export type OutstandingReceivableItem = {
+  serviceAccountId: string;
+  subscriberId: string;
+  accountNumber: string;
+  subscriberName: string;
+  serviceName: string;
+  serviceTypeCode: string;
+  collectionAreaName: string | null;
+  collectorName: string | null;
+  currentBalanceCentavos: string;
+  oldestDueDate: string;
+  status: string;
+};
+
+export type OverdueReceivableItem = {
+  serviceAccountId: string;
+  subscriberId: string;
+  accountNumber: string;
+  subscriberName: string;
+  serviceName: string;
+  serviceTypeCode: string;
+  collectionAreaName: string | null;
+  collectorName: string | null;
+  monthsUnpaid: number;
+  oldestUnpaidInvoice: string;
+  oldestDueDate: string;
+  lastPaymentDate: string | null;
+  totalArrearsCentavos: string;
+  daysPastDue: number;
+  delinquencyAgeBucket: string;
+  status: string;
+};
+
+export type SuspensionCandidateItem = {
+  serviceAccountId: string;
+  subscriberId: string;
+  accountNumber: string;
+  subscriberName: string;
+  serviceName: string;
+  collectionAreaName: string | null;
+  collectorName: string | null;
+  daysPastDue: number;
+  totalArrearsCentavos: string;
+  status: string;
+  oldestDueDate: string;
+};
+
+export type SuspendedAccountItem = {
+  serviceAccountId: string;
+  subscriberId: string;
+  accountNumber: string;
+  subscriberName: string;
+  serviceName: string;
+  collectionAreaName: string | null;
+  status: string;
+  latestSuspensionId: string | null;
+  suspensionReason: string | null;
+  suspensionEffectiveDate: string | null;
+  pendingReconnectionId: string | null;
+  pendingReconnectionFeeCentavos: string | null;
+};
+
+export type SuspensionHistoryItem = {
+  id: string;
+  kind: "SUSPENSION" | "RECONNECTION";
+  serviceAccountId: string;
+  accountNumber: string;
+  subscriberName: string;
+  reason: string | null;
+  effectiveDate: string | null;
+  status: string;
+  feeCentavos: string | null;
+  technicianUserId: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type CollectionBatchStatus =
+  | "OPEN"
+  | "IN_PROGRESS"
+  | "SUBMITTED"
+  | "REMITTED"
+  | "RECONCILED"
+  | "CLOSED";
+
+export type CollectionBatchItem = {
+  id: string;
+  batchNumber: string;
+  collectorUserId: string;
+  collectorName: string | null;
+  collectionAreaId: string | null;
+  collectionAreaName: string | null;
+  status: CollectionBatchStatus;
+  expectedCashCentavos: string;
+  collectedCashCentavos: string;
+  collectedNonCashCentavos: string;
+  remittedCashCentavos: string | null;
+  differenceCentavos: string | null;
+  shortageReason: string | null;
+  notes: string | null;
+  accountCount: number;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CollectionBatchAccount = {
+  id: string;
+  subscriberId: string;
+  subscriberAccountNumber: string;
+  subscriberName: string;
+  subscriberAddress: string;
+  serviceAccountId: string | null;
+  expectedCentavos: string;
+  collectedCentavos: string;
+  paymentId: string | null;
+  notes: string | null;
+};
+
+export type CollectionBatchDetail = CollectionBatchItem & {
+  accounts: CollectionBatchAccount[];
+};
+
+export type CollectorSummary = {
+  collectorUserId: string;
+  username: string;
+  collectorName: string;
+  assignedAreas: { id: string; code: string; name: string }[];
+  subscriberCount: number;
+  openBatchCount: number;
+  currentMonthCollectedCentavos: string;
+  remittanceDifferenceCentavos: string;
+};
+
+export type SubscriberCollectionHistory = {
+  subscriberId: string;
+  accountNumber: string;
+  subscriberName: string;
+  assignedCollector: { id: string; name: string } | null;
+  assignedArea: { id: string; code: string; name: string } | null;
+  items: Array<{
+    batchAccountId: string;
+    batchId: string;
+    batchNumber: string;
+    batchStatus: CollectionBatchStatus;
+    collectorUserId: string;
+    collectorName: string | null;
+    collectionAreaId: string | null;
+    collectionAreaName: string | null;
+    collectedCentavos: string;
+    expectedCentavos: string;
+    paymentId: string | null;
+    notes: string | null;
+    recordedAt: string;
+  }>;
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
 export class ApiClient {
   constructor(
     private readonly getBaseUrl: () => string,
@@ -150,7 +313,139 @@ export class ApiClient {
   }
 
   me() {
-    return this.request<{ user: SessionUser }>("/auth/me");
+    return this.request<{ user: SessionUser; sessionTimeoutMinutes?: number }>(
+      "/auth/me",
+    );
+  }
+
+  getCompanyProfile() {
+    return this.request<{
+      companyName: string;
+      address: string;
+      contactNumber: string;
+      email: string;
+      tin: string;
+    }>("/settings/company");
+  }
+
+  getSettings() {
+    return this.request<{
+      settings: Record<string, unknown>;
+      meta: {
+        receiptCounter: number;
+        invoiceCounter: number;
+        gcashDuplicatePolicy: string;
+        canManage: boolean;
+      };
+      system: {
+        appVersion: string;
+        apiVersion: string;
+        databaseName: string;
+        apiBaseUrl: string;
+        attachmentsPath: string;
+        backupsPath: string;
+      };
+    }>("/settings");
+  }
+
+  updateSettings(patch: Record<string, unknown>) {
+    return this.request<{
+      settings: Record<string, unknown>;
+      meta: {
+        receiptCounter: number;
+        invoiceCounter: number;
+        gcashDuplicatePolicy: string;
+        canManage: boolean;
+      };
+      system: {
+        appVersion: string;
+        apiVersion: string;
+        databaseName: string;
+        apiBaseUrl: string;
+        attachmentsPath: string;
+        backupsPath: string;
+      };
+      changed: string[];
+    }>("/settings", { method: "PUT", json: patch });
+  }
+
+  restoreSettingsDefaults(section: string) {
+    return this.request<{
+      settings: Record<string, unknown>;
+      restored: string[];
+    }>("/settings/restore-defaults", {
+      method: "POST",
+      json: { section },
+    });
+  }
+
+  getSettingsHistory(params: { page?: number; pageSize?: number }) {
+    const q = new URLSearchParams();
+    if (params.page) q.set("page", String(params.page));
+    if (params.pageSize) q.set("pageSize", String(params.pageSize));
+    const qs = q.toString();
+    return this.request<
+      Paginated<{
+        id: string;
+        settingKey: string;
+        oldValue: unknown;
+        newValue: unknown;
+        actorName: string;
+        actorUserId: string | null;
+        at: string;
+        action: string;
+      }>
+    >(`/settings/history${qs ? `?${qs}` : ""}`);
+  }
+
+  getSubscriberDocuments(
+    id: string,
+    params: { page?: number; pageSize?: number },
+  ) {
+    const q = new URLSearchParams();
+    if (params.page) q.set("page", String(params.page));
+    if (params.pageSize) q.set("pageSize", String(params.pageSize));
+    const qs = q.toString();
+    return this.request<
+      Paginated<{
+        kind: "receipt" | "gcash_proof";
+        id: string;
+        label: string;
+        status: string;
+        amountCentavos: string | null;
+        at: string;
+        paymentId: string;
+        voided: boolean;
+        mimeType: string | null;
+        verifierName: string | null;
+        referenceNumber?: string | null;
+        verifiedAt?: string | null;
+      }>
+    >(`/subscribers/${id}/documents${qs ? `?${qs}` : ""}`);
+  }
+
+  getSubscriberAudit(
+    id: string,
+    params: { page?: number; pageSize?: number },
+  ) {
+    const q = new URLSearchParams();
+    if (params.page) q.set("page", String(params.page));
+    if (params.pageSize) q.set("pageSize", String(params.pageSize));
+    const qs = q.toString();
+    return this.request<
+      Paginated<{
+        id: string;
+        actorName: string;
+        actorUserId: string | null;
+        action: string;
+        entityType: string;
+        entityId: string | null;
+        reason: string | null;
+        at: string;
+        oldSummary: string;
+        newSummary: string;
+      }>
+    >(`/subscribers/${id}/audit${qs ? `?${qs}` : ""}`);
   }
 
   listUsers(params: { page?: number; pageSize?: number; search?: string }) {
@@ -262,6 +557,7 @@ export class ApiClient {
     collectorUserId?: string | null;
     dueDay: number;
     notes?: string;
+    servicePlanIds?: string[];
   }) {
     return this.request<SubscriberDetail>("/subscribers", {
       method: "POST",
@@ -387,6 +683,127 @@ export class ApiClient {
     return this.request<void>(`/collection-areas/${id}`, {
       method: "DELETE",
     });
+  }
+
+  listCollectionBatches(params: {
+    page?: number;
+    pageSize?: number;
+    status?: CollectionBatchStatus;
+    collectorUserId?: string;
+    collectionAreaId?: string;
+  }) {
+    const q = new URLSearchParams();
+    if (params.page) q.set("page", String(params.page));
+    if (params.pageSize) q.set("pageSize", String(params.pageSize));
+    if (params.status) q.set("status", params.status);
+    if (params.collectorUserId) q.set("collectorUserId", params.collectorUserId);
+    if (params.collectionAreaId) q.set("collectionAreaId", params.collectionAreaId);
+    const qs = q.toString();
+    return this.request<Paginated<CollectionBatchItem>>(
+      `/collection-batches${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  getCollectionBatch(id: string) {
+    return this.request<CollectionBatchDetail>(`/collection-batches/${id}`);
+  }
+
+  createCollectionBatch(input: {
+    collectorUserId: string;
+    collectionAreaId: string;
+    notes?: string;
+    accounts: Array<{
+      subscriberId: string;
+      serviceAccountId?: string | null;
+      expectedCentavos: string;
+    }>;
+  }) {
+    return this.request<CollectionBatchDetail>("/collection-batches", {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  startCollectionBatch(id: string) {
+    return this.request<CollectionBatchDetail>(`/collection-batches/${id}/start`, {
+      method: "POST",
+    });
+  }
+
+  submitCollectionBatch(id: string) {
+    return this.request<CollectionBatchDetail>(`/collection-batches/${id}/submit`, {
+      method: "POST",
+    });
+  }
+
+  recordBatchCollection(
+    id: string,
+    input: {
+      subscriberId: string;
+      serviceAccountId?: string | null;
+      collectedCentavos: string;
+      paymentId: string;
+      isCash: boolean;
+      notes?: string;
+    },
+  ) {
+    return this.request<CollectionBatchDetail>(
+      `/collection-batches/${id}/collections`,
+      { method: "POST", json: input },
+    );
+  }
+
+  remitCollectionBatch(
+    id: string,
+    input: { remittedCashCentavos: string; shortageReason?: string },
+  ) {
+    return this.request<CollectionBatchDetail>(`/collection-batches/${id}/remit`, {
+      method: "POST",
+      json: input,
+    });
+  }
+
+  reconcileCollectionBatch(id: string) {
+    return this.request<CollectionBatchDetail>(
+      `/collection-batches/${id}/reconcile`,
+      { method: "POST" },
+    );
+  }
+
+  closeCollectionBatch(id: string) {
+    return this.request<CollectionBatchDetail>(`/collection-batches/${id}/close`, {
+      method: "POST",
+    });
+  }
+
+  listCollectorSummaries(params: { page?: number; pageSize?: number } = {}) {
+    const q = new URLSearchParams();
+    if (params.page) q.set("page", String(params.page));
+    if (params.pageSize) q.set("pageSize", String(params.pageSize));
+    const qs = q.toString();
+    return this.request<Paginated<CollectorSummary>>(
+      `/collectors${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  assignCollectorArea(collectorId: string, collectionAreaId: string) {
+    return this.request<{ ok: boolean }>(`/collectors/${collectorId}/areas`, {
+      method: "POST",
+      json: { collectionAreaId },
+    });
+  }
+
+  unassignCollectorArea(collectorId: string, collectionAreaId: string) {
+    return this.request<{ ok: boolean }>(
+      `/collectors/${collectorId}/areas/${collectionAreaId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  getSubscriberCollectionHistory(subscriberId: string) {
+    return this.request<SubscriberCollectionHistory>(
+      `/subscribers/${subscriberId}/collection-history?page=1&pageSize=100`,
+    );
   }
 
   listServiceAccounts(params: {
@@ -658,6 +1075,134 @@ export class ApiClient {
     }>("/receivables/summary");
   }
 
+  listOutstandingReceivables(params: {
+    page?: number;
+    pageSize?: number;
+    collectionAreaId?: string;
+    collectorUserId?: string;
+    servicePlanId?: string;
+    serviceTypeCode?: string;
+  } = {}) {
+    const qs = this.reportQuery(params);
+    return this.request<
+      Paginated<OutstandingReceivableItem> & {
+        totals: { balanceCentavos: string; count: number };
+      }
+    >(`/receivables/outstanding${qs ? `?${qs}` : ""}`);
+  }
+
+  listOverdueReceivables(params: {
+    page?: number;
+    pageSize?: number;
+    collectionAreaId?: string;
+    collectorUserId?: string;
+    servicePlanId?: string;
+    serviceTypeCode?: string;
+    delinquencyAgeBucket?: string;
+  } = {}) {
+    const qs = this.reportQuery(params);
+    return this.request<
+      Paginated<OverdueReceivableItem> & {
+        totals: { arrearsCentavos: string; count: number };
+      }
+    >(`/receivables/overdue${qs ? `?${qs}` : ""}`);
+  }
+
+  listSuspensionCandidates(params: {
+    page?: number;
+    pageSize?: number;
+    collectionAreaId?: string;
+    collectorUserId?: string;
+    servicePlanId?: string;
+    serviceTypeCode?: string;
+  } = {}) {
+    const qs = this.reportQuery(params);
+    return this.request<
+      Paginated<SuspensionCandidateItem> & {
+        thresholdCentavos: string;
+        totals: { count: number; arrearsCentavos: string };
+      }
+    >(`/receivables/suspension-candidates${qs ? `?${qs}` : ""}`);
+  }
+
+  listSuspendedAccounts(params: { page?: number; pageSize?: number } = {}) {
+    const qs = this.reportQuery(params);
+    return this.request<Paginated<SuspendedAccountItem>>(
+      `/receivables/suspended${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  listSuspensionHistory(params: { page?: number; pageSize?: number } = {}) {
+    const qs = this.reportQuery(params);
+    return this.request<Paginated<SuspensionHistoryItem>>(
+      `/receivables/suspension-history${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  technicianOptions(search?: string) {
+    const q = new URLSearchParams();
+    if (search) q.set("search", search);
+    const qs = q.toString();
+    return this.request<CollectorOption[]>(
+      `/technicians/options${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  approverOptions(search?: string) {
+    const q = new URLSearchParams();
+    if (search) q.set("search", search);
+    const qs = q.toString();
+    return this.request<CollectorOption[]>(
+      `/approvers/options${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  createSuspension(input: {
+    serviceAccountId: string;
+    reason: string;
+    effectiveDate: string;
+    approvedBy?: string | null;
+    notes?: string | null;
+  }) {
+    return this.request<{
+      id: string;
+      serviceAccountId: string;
+      reason: string;
+      effectiveDate: string;
+      approvedBy: string | null;
+      notes: string | null;
+      createdAt: string;
+    }>("/suspensions", { method: "POST", json: input });
+  }
+
+  createReconnection(input: {
+    serviceAccountId: string;
+    suspensionId?: string | null;
+    feeCentavos?: string;
+    technicianUserId?: string | null;
+    requestDate?: string | null;
+    notes?: string | null;
+  }) {
+    return this.request<{
+      id: string;
+      serviceAccountId: string;
+      status: string;
+      requestedAt: string;
+    }>("/reconnections", { method: "POST", json: input });
+  }
+
+  completeReconnection(id: string, notes?: string | null) {
+    return this.request<{
+      id: string;
+      serviceAccountId: string;
+      status: string;
+      completedAt: string;
+    }>(`/reconnections/${id}/complete`, {
+      method: "POST",
+      json: { notes: notes ?? null },
+    });
+  }
+
   private reportQuery(params: Record<string, string | number | undefined>) {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
@@ -812,6 +1357,40 @@ export class ApiClient {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  listBackups() {
+    return this.request<{ items: BackupListItem[] }>("/backups");
+  }
+
+  getBackupsRoot() {
+    return this.request<{ path: string }>("/backups/root");
+  }
+
+  createBackup() {
+    return this.request<BackupListItem>("/backups", { method: "POST" });
+  }
+
+  verifyBackup(id: string) {
+    return this.request<{
+      id: string;
+      verified: boolean;
+      checksumOk: boolean;
+      listOk: boolean;
+      message: string;
+    }>(`/backups/${id}/verify`, { method: "POST" });
+  }
+
+  restoreBackup(id: string, confirmation: "RESTORE") {
+    return this.request<{
+      ok: boolean;
+      backupId: string;
+      safetyBackup: string | null;
+      message: string;
+    }>(`/backups/${id}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ confirmation }),
+    });
   }
 
   async fetchProofBlob(proofId: string): Promise<Blob> {

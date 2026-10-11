@@ -5,7 +5,6 @@ import {
   invoiceItems,
   invoices,
   ledgerEntries,
-  serviceAccounts,
   subscriberCredits,
 } from "@bcis/db";
 import { centavosToString, computeRunningBalances, pesosToCentavos } from "@bcis/shared";
@@ -96,7 +95,7 @@ describe("billing API", () => {
     expect(genBody.createdCount).toBeGreaterThan(0);
   });
 
-  it("AT-11: duplicate billing for same period is idempotent", async () => {
+  it("AT-11 Duplicate billing", async () => {
     const first = await app.inject({
       method: "POST",
       url: "/billing/generate",
@@ -134,34 +133,73 @@ describe("billing API", () => {
   it("rate snapshot preserved after plan price change", async () => {
     const config = loadConfig();
     const { db, client } = createDb(config.DATABASE_URL);
+    const stamp = Date.now();
+    const originalPrice = "888.00";
+    const newPrice = "1777.00";
+    const originalRate = pesosToCentavos(originalPrice);
 
-    const [account] = await db
-      .select()
-      .from(serviceAccounts)
-      .where(eq(serviceAccounts.id, serviceAccountId))
-      .limit(1);
-    const originalRate = account!.currentRateCentavos;
+    const planRes = await app.inject({
+      method: "POST",
+      url: "/service-plans",
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        serviceTypeCode: "INTERNET",
+        code: `SNAP-${stamp}`,
+        name: `Snapshot Plan ${stamp}`,
+        price: originalPrice,
+        speedMbps: 50,
+      },
+    });
+    expect(planRes.statusCode).toBe(201);
+    const snapPlanId = (planRes.json() as { id: string }).id;
+
+    const subRes = await app.inject({
+      method: "POST",
+      url: "/subscribers",
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        fullName: `Snapshot Sub ${stamp}`,
+        address: "Snapshot Lane",
+        dueDay: 10,
+      },
+    });
+    const snapSubId = (subRes.json() as { id: string }).id;
+    const saRes = await app.inject({
+      method: "POST",
+      url: "/service-accounts",
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        subscriberId: snapSubId,
+        servicePlanId: snapPlanId,
+        installationAddress: "Snapshot Lane",
+        activationDate: "2025-01-01",
+        billingStartDate: "2025-01-01",
+        dueDay: 10,
+      },
+    });
+    const snapSaId = (saRes.json() as { id: string }).id;
 
     await app.inject({
       method: "PUT",
-      url: `/service-plans/${planId}`,
+      url: `/service-plans/${snapPlanId}`,
       headers: { authorization: `Bearer ${ownerToken}` },
-      payload: { price: "2500.00" },
+      payload: { price: newPrice },
     });
 
+    const period = `2025-${String((stamp % 9) + 1).padStart(2, "0")}`;
     const gen = await app.inject({
       method: "POST",
       url: "/billing/generate",
       headers: { authorization: `Bearer ${ownerToken}` },
-      payload: { billingPeriod: "2025-11" },
+      payload: { billingPeriod: period },
     });
     expect(gen.statusCode).toBe(201);
 
     const invRows = await db
       .select()
       .from(invoices)
-      .where(eq(invoices.serviceAccountId, serviceAccountId));
-    const novInvoice = invRows.find((i) => i.billingPeriod === "2025-11");
+      .where(eq(invoices.serviceAccountId, snapSaId));
+    const novInvoice = invRows.find((i) => i.billingPeriod === period);
     expect(novInvoice).toBeDefined();
 
     const items = await db
@@ -170,7 +208,7 @@ describe("billing API", () => {
       .where(eq(invoiceItems.invoiceId, novInvoice!.id));
     const subLine = items.find((i) => i.itemType === "SUBSCRIPTION");
     expect(subLine!.rateCentavos).toBe(originalRate);
-    expect(subLine!.rateCentavos).not.toBe(pesosToCentavos("2500"));
+    expect(subLine!.rateCentavos).not.toBe(pesosToCentavos(newPrice));
 
     await client.end({ timeout: 5 });
   });

@@ -21,6 +21,7 @@ import {
   type ReportExportInput,
 } from "../lib/export.js";
 import * as reports from "../services/reports-service.js";
+import { getCompanyProfile } from "../services/settings-service.js";
 
 function generatedBy(request: FastifyRequest): string {
   return request.user?.fullName || request.user?.username || "Unknown";
@@ -38,21 +39,6 @@ function parseFormat(query: unknown): ExportFormat {
   return parsed.data;
 }
 
-async function sendExport(
-  reply: FastifyReply,
-  format: ExportFormat,
-  input: ReportExportInput,
-) {
-  const result = await exportReport(format, input);
-  reply
-    .header("Content-Type", result.contentType)
-    .header(
-      "Content-Disposition",
-      `attachment; filename="${result.filename}"`,
-    )
-    .send(result.buffer);
-}
-
 function stripMeta<T extends { allRows?: unknown; statement?: unknown }>(
   data: T,
 ): Omit<T, "allRows"> {
@@ -61,6 +47,32 @@ function stripMeta<T extends { allRows?: unknown; statement?: unknown }>(
 }
 
 const reportsRoutes: FastifyPluginAsync = async (app) => {
+  async function sendExport(
+    reply: FastifyReply,
+    format: ExportFormat,
+    input: ReportExportInput,
+  ) {
+    let companyName = input.companyName;
+    if (!companyName) {
+      try {
+        companyName = (await getCompanyProfile(app.db)).companyName;
+      } catch {
+        companyName = "BCIS";
+      }
+    }
+    const result = await exportReport(format, {
+      ...input,
+      companyName: companyName || "BCIS",
+    });
+    reply
+      .header("Content-Type", result.contentType)
+      .header(
+        "Content-Disposition",
+        `attachment; filename="${result.filename}"`,
+      )
+      .send(result.buffer);
+  }
+
   // --- Collections ---
   app.get(
     "/reports/collections",

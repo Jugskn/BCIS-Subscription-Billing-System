@@ -1,8 +1,11 @@
 import type { FastifyPluginAsync } from "fastify";
 import {
+  collectorIdParamsSchema,
   createSubscriberSchema,
   globalSearchQuerySchema,
   optionsSearchQuerySchema,
+  paginationQuerySchema,
+  subscriberCollectionHistoryQuerySchema,
   subscriberListQuerySchema,
   updateSubscriberSchema,
 } from "@bcis/shared";
@@ -15,6 +18,11 @@ import {
   listSubscribers,
   updateSubscriber,
 } from "../services/subscriber-service.js";
+import { getSubscriberCollectionHistory } from "../services/collection-batch-service.js";
+import {
+  listSubscriberAudit,
+  listSubscriberDocuments,
+} from "../services/subscriber-documents-service.js";
 
 const subscriberRoutes: FastifyPluginAsync = async (app) => {
   app.get(
@@ -59,6 +67,54 @@ const subscriberRoutes: FastifyPluginAsync = async (app) => {
     async (request) => {
       const { id } = request.params as { id: string };
       return getSubscriber(app.db, id);
+    },
+  );
+
+  app.get(
+    "/subscribers/:id/collection-history",
+    { preHandler: [app.requirePermission("subscriber.view")] },
+    async (request) => {
+      const params = collectorIdParamsSchema.safeParse(request.params);
+      const query = subscriberCollectionHistoryQuerySchema.safeParse(
+        request.query,
+      );
+      if (!params.success) {
+        throw validationError("Invalid subscriber identifier.", params.error);
+      }
+      if (!query.success) {
+        throw validationError("Invalid collection history query.", query.error);
+      }
+      return getSubscriberCollectionHistory(
+        app.db,
+        params.data.id,
+        query.data,
+      );
+    },
+  );
+
+  app.get(
+    "/subscribers/:id/documents",
+    { preHandler: [app.requirePermission("receivable.view")] },
+    async (request) => {
+      const { id } = request.params as { id: string };
+      const parsed = paginationQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        throw validationError("Invalid documents query.", parsed.error);
+      }
+      return listSubscriberDocuments(app.db, id, parsed.data);
+    },
+  );
+
+  app.get(
+    "/subscribers/:id/audit",
+    { preHandler: [app.requirePermission("audit.view")] },
+    async (request) => {
+      const { id } = request.params as { id: string };
+      const parsed = paginationQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        throw validationError("Invalid audit query.", parsed.error);
+      }
+      return listSubscriberAudit(app.db, id, parsed.data);
     },
   );
 

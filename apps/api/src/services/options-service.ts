@@ -94,14 +94,12 @@ export async function listAreaOptions(db: Database["db"], search?: string) {
     .limit(OPTIONS_LIMIT);
 }
 
-export async function listCollectorOptions(
+async function listRoleUserOptions(
   db: Database["db"],
+  roleName: string,
   search?: string,
 ) {
-  const filters = [
-    eq(users.isActive, true),
-    eq(roles.name, "Collector"),
-  ];
+  const filters = [eq(users.isActive, true), eq(roles.name, roleName)];
   if (search) {
     filters.push(
       or(
@@ -111,7 +109,7 @@ export async function listCollectorOptions(
     );
   }
 
-  const rows = await db
+  return db
     .selectDistinct({
       id: users.id,
       fullName: users.fullName,
@@ -123,6 +121,50 @@ export async function listCollectorOptions(
     .where(and(...filters))
     .orderBy(asc(users.fullName))
     .limit(OPTIONS_LIMIT);
+}
 
-  return rows;
+export async function listCollectorOptions(
+  db: Database["db"],
+  search?: string,
+) {
+  return listRoleUserOptions(db, "Collector", search);
+}
+
+export async function listTechnicianOptions(
+  db: Database["db"],
+  search?: string,
+) {
+  return listRoleUserOptions(db, "Technician", search);
+}
+
+/** Active users eligible to approve suspensions (Owner / Administrator). */
+export async function listApproverOptions(
+  db: Database["db"],
+  search?: string,
+) {
+  const filters = [
+    eq(users.isActive, true),
+    inArray(roles.name, ["Owner", "Administrator"]),
+  ];
+  if (search) {
+    filters.push(
+      or(
+        ilike(users.fullName, `%${search}%`),
+        ilike(users.username, `%${search}%`),
+      )!,
+    );
+  }
+
+  return db
+    .selectDistinct({
+      id: users.id,
+      fullName: users.fullName,
+      username: users.username,
+    })
+    .from(users)
+    .innerJoin(userRoles, eq(userRoles.userId, users.id))
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(...filters))
+    .orderBy(asc(users.fullName))
+    .limit(OPTIONS_LIMIT);
 }

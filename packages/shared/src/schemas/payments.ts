@@ -158,10 +158,13 @@ export const receiptDetailSchema = z.object({
   subscriberAccountNumber: z.string(),
   subscriberAddress: z.string(),
   issuedByName: z.string().nullable(),
+  /** Distinct plan names from allocated invoices — used as the receipt headline. */
+  serviceHeadline: z.string().nullable(),
   allocations: z.array(
     z.object({
       invoiceNumber: z.string(),
       billingPeriod: z.string(),
+      planName: z.string(),
       amountCentavos: z.string(),
     }),
   ),

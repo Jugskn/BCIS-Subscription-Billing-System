@@ -10,7 +10,11 @@ import type {
   PaymentListItem,
   SubscriberDetail,
 } from "@bcis/shared";
-import { formatCentavos } from "@bcis/shared";
+import {
+  formatCentavos,
+  formatPhilippineMobile,
+  philippineMobileSchema,
+} from "@bcis/shared";
 import {
   AsyncCombobox,
   type AsyncComboboxOption,
@@ -28,12 +32,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
-import { ApiClientError, applyApiFieldErrors } from "@/lib/api";
+import {
+  ApiClientError,
+  applyApiFieldErrors,
+  type SubscriberCollectionHistory,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const editSchema = z.object({
   fullName: z.string().min(1, "Full name is required."),
-  contactPhone: z.string().optional(),
+  contactPhone: philippineMobileSchema.or(z.literal("")),
   contactEmail: z.string().email().optional().or(z.literal("")),
   address: z.string().min(1, "Address is required."),
   collectionAreaId: z.string().optional(),
@@ -50,10 +58,10 @@ const TABS = [
   { id: "billing", label: "Billing" },
   { id: "payments", label: "Payments" },
   { id: "ledger", label: "Ledger" },
-  { id: "collection", label: "Collection", later: true },
+  { id: "collection", label: "Collection" },
   { id: "history", label: "Service History" },
-  { id: "documents", label: "Documents", later: true },
-  { id: "audit", label: "Audit", later: true },
+  { id: "documents", label: "Documents" },
+  { id: "audit", label: "Audit" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -99,6 +107,24 @@ export function SubscriberProfilePage() {
     queryFn: () =>
       api.listPayments({ subscriberId: id, page: 1, pageSize: 100 }),
     enabled: Boolean(id) && tab === "payments" && can("receivable.view"),
+  });
+
+  const collectionQuery = useQuery({
+    queryKey: ["subscriber-collections", id],
+    queryFn: () => api.getSubscriberCollectionHistory(id!),
+    enabled: Boolean(id) && tab === "collection",
+  });
+
+  const documentsQuery = useQuery({
+    queryKey: ["subscriber-documents", id],
+    queryFn: () => api.getSubscriberDocuments(id!, { page: 1, pageSize: 100 }),
+    enabled: Boolean(id) && tab === "documents" && can("receivable.view"),
+  });
+
+  const auditQuery = useQuery({
+    queryKey: ["subscriber-audit", id],
+    queryFn: () => api.getSubscriberAudit(id!, { page: 1, pageSize: 100 }),
+    enabled: Boolean(id) && tab === "audit" && can("audit.view"),
   });
 
   const editForm = useForm<EditForm>({
@@ -283,7 +309,10 @@ export function SubscriberProfilePage() {
 
       {tab === "overview" ? (
         <dl className="grid max-w-3xl gap-4 sm:grid-cols-2">
-          <Field label="Contact phone" value={subscriber.contactPhone} />
+          <Field
+            label="Contact phone"
+            value={formatPhilippineMobile(subscriber.contactPhone)}
+          />
           <Field label="Email" value={subscriber.contactEmail} />
           <Field label="Address" value={subscriber.address} />
           <Field label="Collection area" value={subscriber.collectionAreaName} />
@@ -323,7 +352,15 @@ export function SubscriberProfilePage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Contact phone</Label>
-                <Input {...editForm.register("contactPhone")} />
+                <Input
+                  placeholder="09XX XXX XXXX"
+                  {...editForm.register("contactPhone")}
+                />
+                {editForm.formState.errors.contactPhone ? (
+                  <p className="text-sm text-danger">
+                    {editForm.formState.errors.contactPhone.message}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label>Email</Label>
@@ -471,15 +508,141 @@ export function SubscriberProfilePage() {
         />
       ) : null}
 
-      {TABS.filter((t) => "later" in t && t.later).map(
-        (t) =>
-          tab === t.id ? (
-            <TabEmptyState
-              key={t.id}
-              title={`${t.label} — coming soon`}
-              description="This tab will be available in a later phase."
-            />
-          ) : null,
+      {tab === "collection" ? (
+        <SubscriberCollectionTab
+          data={collectionQuery.data}
+          loading={collectionQuery.isLoading}
+          error={
+            collectionQuery.isError
+              ? collectionQuery.error instanceof ApiClientError
+                ? collectionQuery.error.message
+                : "Could not load collection history."
+              : null
+          }
+        />
+      ) : null}
+
+      {tab === "documents" ? (
+        <SubscriberDocumentsTab
+          items={documentsQuery.data?.items ?? []}
+          loading={documentsQuery.isLoading}
+          canView={can("receivable.view")}
+          error={
+            documentsQuery.isError
+              ? documentsQuery.error instanceof ApiClientError
+                ? documentsQuery.error.message
+                : "Could not load documents."
+              : null
+          }
+          onPreviewProof={async (proofId) => {
+            try {
+              const blob = await api.fetchProofBlob(proofId);
+              const url = URL.createObjectURL(blob);
+              window.open(url, "_blank", "noopener,noreferrer");
+            } catch (err) {
+              toast.error(
+                err instanceof ApiClientError
+                  ? err.message
+                  : "Could not open proof.",
+              );
+            }
+          }}
+        />
+      ) : null}
+
+      {tab === "audit" ? (
+        <SubscriberAuditTab
+          items={auditQuery.data?.items ?? []}
+          loading={auditQuery.isLoading}
+          canView={can("audit.view")}
+          error={
+            auditQuery.isError
+              ? auditQuery.error instanceof ApiClientError
+                ? auditQuery.error.message
+                : "Could not load audit trail."
+              : null
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function SubscriberCollectionTab({
+  data,
+  loading,
+  error,
+}: {
+  data: SubscriberCollectionHistory | undefined;
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) return <p className="text-sm text-muted">Loading collection history…</p>;
+  if (error) return <p className="text-sm text-danger">{error}</p>;
+  if (!data) return null;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="border border-border bg-surface p-3">
+          <p className="text-sm text-muted">Assigned collector</p>
+          <p className="mt-1 font-medium text-ink">
+            {data.assignedCollector?.name ?? "Unassigned"}
+          </p>
+        </div>
+        <div className="border border-border bg-surface p-3">
+          <p className="text-sm text-muted">Collection area</p>
+          <p className="mt-1 font-medium text-ink">
+            {data.assignedArea
+              ? `${data.assignedArea.code} — ${data.assignedArea.name}`
+              : "Unassigned"}
+          </p>
+        </div>
+      </div>
+
+      {data.items.length === 0 ? (
+        <TabEmptyState
+          title="No collection history"
+          description="This subscriber has not appeared in a collection batch yet."
+        />
+      ) : (
+        <div className="overflow-auto border border-border bg-surface">
+          <table className="min-w-full text-sm">
+            <thead className="border-b border-border text-left text-muted">
+              <tr>
+                <th className="px-3 py-2 font-medium">Date</th>
+                <th className="px-3 py-2 font-medium">Batch</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 text-right font-medium">Expected</th>
+                <th className="px-3 py-2 text-right font-medium">Collected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((item) => (
+                <tr key={item.batchAccountId} className="border-b border-border">
+                  <td className="px-3 py-2">
+                    {new Date(item.recordedAt).toLocaleDateString("en-PH")}
+                  </td>
+                  <td className="px-3 py-2">
+                    <Link
+                      to={`/collections/batches/${item.batchId}`}
+                      className="text-burgundy hover:underline"
+                    >
+                      {item.batchNumber}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-2"><StatusBadge status={item.batchStatus} /></td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatCentavos(BigInt(item.expectedCentavos))}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatCentavos(BigInt(item.collectedCentavos))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -772,6 +935,209 @@ function ServiceAccountEvents({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function SubscriberDocumentsTab({
+  items,
+  loading,
+  canView,
+  error,
+  onPreviewProof,
+}: {
+  items: Array<{
+    kind: "receipt" | "gcash_proof";
+    id: string;
+    label: string;
+    status: string;
+    amountCentavos: string | null;
+    at: string;
+    paymentId: string;
+    voided: boolean;
+    mimeType: string | null;
+    verifierName: string | null;
+    referenceNumber?: string | null;
+    verifiedAt?: string | null;
+  }>;
+  loading: boolean;
+  canView: boolean;
+  error: string | null;
+  onPreviewProof: (proofId: string) => void | Promise<void>;
+}) {
+  if (!canView) {
+    return (
+      <TabEmptyState
+        title="Documents restricted"
+        description="receivable.view is required to list receipts and proofs."
+      />
+    );
+  }
+  if (loading) return <p className="text-sm text-muted">Loading documents…</p>;
+  if (error) return <p className="text-sm text-danger">{error}</p>;
+  if (items.length === 0) {
+    return (
+      <TabEmptyState
+        title="No documents"
+        description="Receipts and GCash proofs for this subscriber will appear here."
+      />
+    );
+  }
+
+  return (
+    <div className="overflow-auto border border-border bg-surface">
+      <table className="min-w-full text-sm">
+        <thead className="border-b border-border text-left text-muted">
+          <tr>
+            <th className="px-3 py-2 font-medium">Type</th>
+            <th className="px-3 py-2 font-medium">Label</th>
+            <th className="px-3 py-2 font-medium">Status</th>
+            <th className="px-3 py-2 font-medium">When</th>
+            <th className="px-3 py-2 font-medium">Details</th>
+            <th className="px-3 py-2 font-medium">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={`${item.kind}-${item.id}`} className="border-b border-border">
+              <td className="px-3 py-2">
+                {item.kind === "receipt" ? "Receipt" : "GCash proof"}
+              </td>
+              <td className="px-3 py-2 font-mono">{item.label}</td>
+              <td className="px-3 py-2">
+                <StatusBadge status={item.status} />
+                {item.voided ? (
+                  <span className="ml-2 font-bold uppercase text-danger">
+                    VOID
+                  </span>
+                ) : null}
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                {new Date(item.at).toLocaleString("en-PH")}
+              </td>
+              <td className="px-3 py-2 text-muted">
+                {item.kind === "receipt" && item.amountCentavos
+                  ? formatCentavos(BigInt(item.amountCentavos))
+                  : null}
+                {item.kind === "gcash_proof"
+                  ? [
+                      item.referenceNumber
+                        ? `Ref ${item.referenceNumber}`
+                        : null,
+                      item.verifierName
+                        ? `Verifier: ${item.verifierName}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : null}
+              </td>
+              <td className="px-3 py-2">
+                {item.kind === "receipt" ? (
+                  <Link
+                    className="text-burgundy hover:underline"
+                    to={`/payments/receipts/${item.id}`}
+                  >
+                    Print
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-burgundy hover:underline"
+                    onClick={() => void onPreviewProof(item.id)}
+                  >
+                    Preview
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SubscriberAuditTab({
+  items,
+  loading,
+  canView,
+  error,
+}: {
+  items: Array<{
+    id: string;
+    actorName: string;
+    action: string;
+    entityType: string;
+    entityId: string | null;
+    reason: string | null;
+    at: string;
+    oldSummary: string;
+    newSummary: string;
+  }>;
+  loading: boolean;
+  canView: boolean;
+  error: string | null;
+}) {
+  if (!canView) {
+    return (
+      <TabEmptyState
+        title="Audit restricted"
+        description="audit.view is required to see this subscriber’s audit trail."
+      />
+    );
+  }
+  if (loading) return <p className="text-sm text-muted">Loading audit…</p>;
+  if (error) return <p className="text-sm text-danger">{error}</p>;
+  if (items.length === 0) {
+    return (
+      <TabEmptyState
+        title="No audit entries"
+        description="Changes to this subscriber, their accounts, invoices, and payments will appear here."
+      />
+    );
+  }
+
+  return (
+    <div className="overflow-auto border border-border bg-surface">
+      <table className="min-w-full text-sm">
+        <thead className="border-b border-border text-left text-muted">
+          <tr>
+            <th className="px-3 py-2 font-medium">When</th>
+            <th className="px-3 py-2 font-medium">Actor</th>
+            <th className="px-3 py-2 font-medium">Action</th>
+            <th className="px-3 py-2 font-medium">Entity</th>
+            <th className="px-3 py-2 font-medium">Reason</th>
+            <th className="px-3 py-2 font-medium">Old → New</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((row) => (
+            <tr key={row.id} className="border-b border-border">
+              <td className="px-3 py-2 whitespace-nowrap">
+                {new Date(row.at).toLocaleString("en-PH")}
+              </td>
+              <td className="px-3 py-2">{row.actorName || "—"}</td>
+              <td className="px-3 py-2">{row.action}</td>
+              <td className="px-3 py-2">
+                {row.entityType}
+                {row.entityId ? (
+                  <span className="text-muted">
+                    {" "}
+                    ({row.entityId.slice(0, 8)}…)
+                  </span>
+                ) : null}
+              </td>
+              <td className="px-3 py-2">{row.reason ?? "—"}</td>
+              <td className="px-3 py-2 text-muted">
+                {row.oldSummary || row.newSummary
+                  ? `${row.oldSummary || "—"} → ${row.newSummary || "—"}`
+                  : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

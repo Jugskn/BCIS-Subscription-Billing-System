@@ -17,6 +17,10 @@ export function SoaPrintPage() {
     queryFn: () => api.getStatementOfAccount(subscriberId!, fromDate, toDate),
     enabled: Boolean(subscriberId && fromDate && toDate) && can("receivable.view"),
   });
+  const companyQuery = useQuery({
+    queryKey: ["company-profile"],
+    queryFn: () => api.getCompanyProfile(),
+  });
 
   if (!can("receivable.view")) {
     return <p className="p-6 text-sm text-muted">No access.</p>;
@@ -57,8 +61,11 @@ export function SoaPrintPage() {
       <article className="border border-border bg-surface p-8 print:border-0">
         <header className="mb-6 border-b border-border pb-4 text-center">
           <p className="text-xs uppercase tracking-wide text-muted">
-            Bukidnon Cable and Internet Services
+            {companyQuery.data?.companyName || "BCIS"}
           </p>
+          {companyQuery.data?.address ? (
+            <p className="mt-1 text-xs text-muted">{companyQuery.data.address}</p>
+          ) : null}
           <h1 className="mt-1 text-2xl font-semibold text-ink">
             Statement of Account
           </h1>

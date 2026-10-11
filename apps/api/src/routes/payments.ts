@@ -30,6 +30,7 @@ import {
   reversePayment,
   verifyGCashPayment,
 } from "../services/payment-service.js";
+import { getProofUploadLimits } from "../services/settings-service.js";
 
 type PaymentsRouteOpts = {
   uploadDir: string;
@@ -180,8 +181,22 @@ const paymentRoutes: FastifyPluginAsync<PaymentsRouteOpts> = async (
       }
 
       const buffer = await data.toBuffer();
+      const limits = await getProofUploadLimits(app.db);
+      const maxBytes = Math.min(opts.maxProofBytes, limits.maxBytes);
+      const mimeOk =
+        (data.mimetype === "image/jpeg" && limits.allowedTypes.includes("jpg")) ||
+        (data.mimetype === "image/png" && limits.allowedTypes.includes("png")) ||
+        (data.mimetype === "application/pdf" &&
+          limits.allowedTypes.includes("pdf"));
+      if (!mimeOk) {
+        throw new AppError(
+          400,
+          "VALIDATION_ERROR",
+          `Proof must be one of: ${limits.allowedTypes.join(", ")}.`,
+        );
+      }
       assertProofMime(data.mimetype);
-      assertProofSize(buffer.length, opts.maxProofBytes);
+      assertProofSize(buffer.length, maxBytes);
 
       const stored = await storeProofFile({
         uploadDir: opts.uploadDir,

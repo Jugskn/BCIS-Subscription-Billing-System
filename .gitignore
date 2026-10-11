@@ -8,6 +8,9 @@ release/*
 storage/attachments/*
 storage/backups/*
 !storage/**/.gitkeep
+apps/api/storage/attachments/*
+apps/api/storage/backups/*
+!apps/api/storage/**/.gitkeep
 apps/api/uploads/
 .DS_Store
 coverage/

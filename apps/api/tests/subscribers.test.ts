@@ -246,6 +246,34 @@ describe("subscribers and services API", () => {
     expect(body2.accountNumber).not.toBe(body.accountNumber);
   });
 
+  it("creates service accounts for selected plans on subscriber create", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/subscribers",
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        fullName: "Plan Select On Create",
+        address: "Plan Select Street, Malaybalay",
+        dueDay: 18,
+        servicePlanIds: [planId],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { id: string };
+    const accounts = await app.inject({
+      method: "GET",
+      url: `/service-accounts?subscriberId=${body.id}&page=1&pageSize=10`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(accounts.statusCode).toBe(200);
+    const list = accounts.json() as {
+      items: { planCode: string; installationAddress: string; dueDay: number }[];
+    };
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0]!.installationAddress).toBe("Plan Select Street, Malaybalay");
+    expect(list.items[0]!.dueDay).toBe(18);
+  });
+
   it("global search finds subscriber by name", async () => {
     await app.inject({
       method: "POST",

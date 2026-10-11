@@ -9,6 +9,7 @@ import type { CreateUserInput } from "@bcis/shared";
 import { AppError } from "../lib/errors.js";
 import { hashPassword } from "../lib/password.js";
 import { writeAuditLog } from "../lib/audit.js";
+import { getMinPasswordLength } from "./settings-service.js";
 
 export async function listUsers(
   db: Database["db"],
@@ -90,6 +91,23 @@ export async function createUser(
     .limit(1);
   if (existing[0]) {
     throw new AppError(409, "USERNAME_TAKEN", "That username is already in use.");
+  }
+
+  const minLen = await getMinPasswordLength(db);
+  if (input.password.length < minLen) {
+    throw new AppError(
+      400,
+      "VALIDATION_ERROR",
+      `Password must be at least ${minLen} characters.`,
+      {
+        issues: [
+          {
+            field: "password",
+            message: `Password must be at least ${minLen} characters.`,
+          },
+        ],
+      },
+    );
   }
 
   const roleRows = await db

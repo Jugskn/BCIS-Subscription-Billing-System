@@ -3,10 +3,17 @@ import { AppShell } from "@/components/layout/AppShell";
 import { useAuth } from "@/lib/auth";
 import { LoginPage } from "@/pages/LoginPage";
 import { LockScreen } from "@/pages/LockScreen";
-import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { AdministrationPage } from "@/pages/admin/AdministrationPage";
+import { AuditLogPage } from "@/pages/admin/AuditLogPage";
+import { BackupsPage } from "@/pages/admin/BackupsPage";
+import { RolesPage } from "@/pages/admin/RolesPage";
+import { SettingsPage } from "@/pages/admin/SettingsPage";
 import { UsersPage } from "@/pages/admin/UsersPage";
 import { AreasPage } from "@/pages/collections/AreasPage";
+import { BatchDetailPage } from "@/pages/collections/BatchDetailPage";
+import { BatchesPage } from "@/pages/collections/BatchesPage";
+import { CollectorsPage } from "@/pages/collections/CollectorsPage";
+import { RemittancePage } from "@/pages/collections/RemittancePage";
 import { PlansPage } from "@/pages/services/PlansPage";
 import { NewSubscriberPage } from "@/pages/subscribers/NewSubscriberPage";
 import { ServiceAccountsPage } from "@/pages/subscribers/ServiceAccountsPage";
@@ -37,16 +44,9 @@ import {
 import { SoaPrintPage } from "@/pages/print/SoaPrintPage";
 import { RouteSheetPrintPage } from "@/pages/print/RouteSheetPrintPage";
 import { AgingPage } from "@/pages/receivables/AgingPage";
-
-function Placeholder({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return <PlaceholderPage title={title} description={description} />;
-}
+import { OutstandingPage } from "@/pages/receivables/OutstandingPage";
+import { OverduePage } from "@/pages/receivables/OverduePage";
+import { SuspensionCandidatesPage } from "@/pages/receivables/SuspensionCandidatesPage";
 
 function ProtectedRoutes() {
   const { user, locked, can } = useAuth();
@@ -178,10 +178,7 @@ function ProtectedRoutes() {
         <Route
           path="collections/collectors"
           element={
-            <Placeholder
-              title="Collectors"
-              description="Collector assignments."
-            />
+            can("collection.create") ? <CollectorsPage /> : <Navigate to="/" replace />
           }
         />
         <Route
@@ -197,19 +194,19 @@ function ProtectedRoutes() {
         <Route
           path="collections/batches"
           element={
-            <Placeholder
-              title="Collection Batches"
-              description="House-to-house collection batches."
-            />
+            can("collection.create") ? <BatchesPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route
+          path="collections/batches/:id"
+          element={
+            can("collection.create") ? <BatchDetailPage /> : <Navigate to="/" replace />
           }
         />
         <Route
           path="collections/remittance"
           element={
-            <Placeholder
-              title="Remittance"
-              description="Collector remittance and reconciliation."
-            />
+            can("collection.reconcile") ? <RemittancePage /> : <Navigate to="/" replace />
           }
         />
 
@@ -220,19 +217,21 @@ function ProtectedRoutes() {
         <Route
           path="receivables/outstanding"
           element={
-            <Placeholder
-              title="Outstanding Receivables"
-              description="Open balances."
-            />
+            can("receivable.view") ? (
+              <OutstandingPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
           path="receivables/overdue"
           element={
-            <Placeholder
-              title="Overdue"
-              description="Overdue accounts and follow-up."
-            />
+            can("receivable.view") ? (
+              <OverduePage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
         <Route
@@ -248,10 +247,11 @@ function ProtectedRoutes() {
         <Route
           path="receivables/suspension-candidates"
           element={
-            <Placeholder
-              title="Suspension Candidates"
-              description="Accounts approaching suspension."
-            />
+            can("receivable.view") ? (
+              <SuspensionCandidatesPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
 
@@ -379,7 +379,10 @@ function ProtectedRoutes() {
         <Route
           path="administration"
           element={
-            can("user.manage") ? (
+            can("user.manage") ||
+            can("backup.create") ||
+            can("settings.view") ||
+            can("audit.view") ? (
               <AdministrationPage />
             ) : (
               <Navigate to="/" replace />
@@ -390,6 +393,44 @@ function ProtectedRoutes() {
           path="administration/users"
           element={
             can("user.manage") ? <UsersPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route
+          path="administration/roles"
+          element={
+            can("user.manage") ||
+            can("role.manage") ||
+            can("settings.view") ? (
+              <RolesPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="administration/settings"
+          element={
+            can("settings.view") ? (
+              <SettingsPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="administration/audit"
+          element={
+            can("audit.view") ? <AuditLogPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route
+          path="administration/backups"
+          element={
+            can("backup.create") ? (
+              <BackupsPage />
+            ) : (
+              <Navigate to="/" replace />
+            )
           }
         />
       </Route>

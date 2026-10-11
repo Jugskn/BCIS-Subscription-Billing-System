@@ -20,6 +20,8 @@ import {
   paymentReversals,
   payments,
   receipts,
+  serviceAccounts,
+  servicePlans,
   subscriberCredits,
   subscribers,
   users,
@@ -38,7 +40,10 @@ import {
 import { AppError } from "../lib/errors.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { nextAccountNumber } from "../lib/account-number.js";
-import { getGraceDays } from "./settings-service.js";
+import {
+  getGraceDays,
+  getReceiptNumberPrefix,
+} from "./settings-service.js";
 
 type Tx = Parameters<Parameters<Database["db"]["transaction"]>[0]>[0];
 
@@ -265,10 +270,15 @@ async function buildReceiptDetail(db: Database["db"] | Tx, receiptId: string) {
       amountCentavos: paymentAllocations.amountCentavos,
       invoiceNumber: invoices.invoiceNumber,
       billingPeriod: invoices.billingPeriod,
+      planName: servicePlans.name,
     })
     .from(paymentAllocations)
     .innerJoin(invoices, eq(paymentAllocations.invoiceId, invoices.id))
+    .innerJoin(serviceAccounts, eq(invoices.serviceAccountId, serviceAccounts.id))
+    .innerJoin(servicePlans, eq(serviceAccounts.servicePlanId, servicePlans.id))
     .where(eq(paymentAllocations.paymentId, row.payment.id));
+
+  const planNames = [...new Set(allocs.map((a) => a.planName))];
 
   return {
     id: row.receipt.id,
@@ -286,9 +296,11 @@ async function buildReceiptDetail(db: Database["db"] | Tx, receiptId: string) {
     subscriberAccountNumber: row.subscriber.accountNumber,
     subscriberAddress: row.subscriber.address,
     issuedByName: row.issuedByName,
+    serviceHeadline: planNames.length > 0 ? planNames.join(" / ") : null,
     allocations: allocs.map((a) => ({
       invoiceNumber: a.invoiceNumber,
       billingPeriod: a.billingPeriod,
+      planName: a.planName,
       amountCentavos: centavosToString(a.amountCentavos),
     })),
     unallocatedCentavos: centavosToString(row.payment.unallocatedCentavos),
@@ -639,7 +651,8 @@ async function postPaymentInTransaction(
   await applyAllocationToInvoices(tx, allocation, openRows, graceDays);
   await addSubscriberCredit(tx, input.subscriberId, allocation.unallocatedCentavos);
 
-  const receiptNumber = await nextAccountNumber(tx, "RCPT");
+  const receiptPrefix = await getReceiptNumberPrefix(tx);
+  const receiptNumber = await nextAccountNumber(tx, receiptPrefix);
   const [receipt] = await tx
     .insert(receipts)
     .values({
@@ -652,6 +665,9 @@ async function postPaymentInTransaction(
     })
     .returning();
 
+  // Full payment amount is credited here (including advance/unallocated).
+  // Billing applies subscriber_credits to new invoices without a second ledger
+  // credit, so net == open balances - unapplied credit.
   const date = entryDateFrom(input.receivedAt);
   await tx.insert(ledgerEntries).values({
     subscriberId: input.subscriberId,

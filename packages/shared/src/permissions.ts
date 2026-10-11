@@ -19,6 +19,7 @@ export const PERMISSIONS = [
   "report.export",
   "user.manage",
   "role.manage",
+  "settings.view",
   "settings.manage",
   "backup.create",
   "backup.restore",
@@ -42,7 +43,7 @@ export type RoleName = (typeof ROLES)[number];
 
 const ALL = [...PERMISSIONS] as PermissionCode[];
 
-/** Operational admin scope (SPEC 3.1 Administrator): no users/config/audit/backup. */
+/** Operational admin scope (SPEC 3.1 Administrator): no users/settings.manage/audit/backup. */
 const ADMINISTRATOR: PermissionCode[] = [
   "subscriber.view",
   "subscriber.create",
@@ -62,6 +63,7 @@ const ADMINISTRATOR: PermissionCode[] = [
   "service.manage",
   "report.view",
   "report.export",
+  "settings.view",
 ];
 
 /** Default role → permission matrix used by seed and docs (SPEC 3.1 + 4.4). */
@@ -93,6 +95,7 @@ export const ROLE_PERMISSION_MATRIX: Record<RoleName, PermissionCode[]> = {
     "report.view",
     "report.export",
     "audit.view",
+    "settings.view",
   ],
   Technician: ["subscriber.view", "service.manage"],
   Viewer: ["subscriber.view", "receivable.view", "report.view"],

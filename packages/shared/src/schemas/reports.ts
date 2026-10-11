@@ -86,6 +86,7 @@ export const auditReportQuerySchema = paginationQuerySchema.extend({
   toDate: isoDateSchema.optional(),
   actorUserId: z.string().uuid().optional(),
   action: z.string().trim().optional(),
+  entityType: z.string().trim().optional(),
 });
 
 export const exportQuerySchema = z.object({
@@ -118,12 +119,33 @@ export const dashboardKpisSchema = z.object({
   pendingGcashCount: z.number().int(),
 });
 
+export const dashboardActionRequiredSchema = z.object({
+  overdueSubscribersCount: z.number().int(),
+  followUpSubscribersCount: z.number().int().optional(),
+  suspensionCandidatesCount: z.number().int(),
+});
+
 export const dashboardSchema = z.object({
   kpis: dashboardKpisSchema,
+  actionRequired: dashboardActionRequiredSchema,
+  windows: z.object({
+    collectionsTrendDays: z.number().int(),
+    paymentMethodsFromDate: z.string(),
+    paymentMethodsToDate: z.string(),
+    collectorFromDate: z.string(),
+    collectorToDate: z.string(),
+    billingMonths: z.number().int(),
+  }),
   billingVsCollection: z.array(
     z.object({
       month: z.string(),
       billedCentavos: z.string(),
+      collectedCentavos: z.string(),
+    }),
+  ),
+  collectionsTrend: z.array(
+    z.object({
+      date: z.string(),
       collectedCentavos: z.string(),
     }),
   ),
@@ -140,6 +162,7 @@ export const dashboardSchema = z.object({
       collectorUserId: z.string().nullable(),
       collectorName: z.string(),
       collectedCentavos: z.string(),
+      expectedCentavos: z.string(),
       paymentCount: z.number().int(),
       assignedSubscribers: z.number().int(),
     }),
@@ -179,6 +202,7 @@ export const routeSheetSchema = z.object({
   generatedAt: z.string(),
   rows: z.array(
     z.object({
+      subscriberId: z.string().uuid(),
       accountNumber: z.string(),
       fullName: z.string(),
       address: z.string(),

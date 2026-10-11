@@ -14,6 +14,10 @@ export function ReceiptPrintPage() {
     queryFn: () => api.getReceipt(id!),
     enabled: Boolean(id) && can("receivable.view"),
   });
+  const companyQuery = useQuery({
+    queryKey: ["company-profile"],
+    queryFn: () => api.getCompanyProfile(),
+  });
 
   if (!can("receivable.view")) {
     return <p className="text-sm text-muted">You do not have access to receipts.</p>;
@@ -61,9 +65,21 @@ export function ReceiptPrintPage() {
 
         <header className="mb-6 border-b border-border pb-4 text-center">
           <p className="text-xs uppercase tracking-wide text-muted">
-            Bukidnon Cable and Internet Services
+            {companyQuery.data?.companyName || "BCIS"}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink">Official Receipt</h1>
+          {companyQuery.data?.address ? (
+            <p className="mt-1 text-xs text-muted">{companyQuery.data.address}</p>
+          ) : null}
+          {r.serviceHeadline ? (
+            <>
+              <h1 className="mt-2 text-2xl font-semibold text-ink">{r.serviceHeadline}</h1>
+              <p className="mt-1 text-sm font-medium uppercase tracking-wide text-muted">
+                Official Receipt
+              </p>
+            </>
+          ) : (
+            <h1 className="mt-1 text-2xl font-semibold text-ink">Official Receipt</h1>
+          )}
           <p className="mt-2 text-lg font-medium tabular-nums text-ink">
             {r.receiptNumber}
           </p>
@@ -100,6 +116,7 @@ export function ReceiptPrintPage() {
         <table className="mt-6 w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-muted">
+              <th className="py-1 font-medium">Service / Plan</th>
               <th className="py-1 font-medium">Invoice</th>
               <th className="py-1 font-medium">Period</th>
               <th className="py-1 text-right font-medium">Amount</th>
@@ -108,6 +125,7 @@ export function ReceiptPrintPage() {
           <tbody>
             {r.allocations.map((a) => (
               <tr key={`${a.invoiceNumber}-${a.billingPeriod}`} className="border-b border-border">
+                <td className="py-1">{a.planName}</td>
                 <td className="py-1">{a.invoiceNumber}</td>
                 <td className="py-1">{a.billingPeriod}</td>
                 <td className="py-1 text-right tabular-nums">
@@ -117,7 +135,7 @@ export function ReceiptPrintPage() {
             ))}
             {BigInt(r.unallocatedCentavos) > 0n ? (
               <tr className="border-b border-border">
-                <td className="py-1" colSpan={2}>
+                <td className="py-1" colSpan={3}>
                   Unapplied credit
                 </td>
                 <td className="py-1 text-right tabular-nums">

@@ -8,7 +8,7 @@ import {
   users,
 } from "@bcis/db";
 import * as argon2 from "argon2";
-import { createTestApp, ensureCashierUser } from "./helpers.js";
+import { createTestApp } from "./helpers.js";
 import { loadConfig } from "../src/config.js";
 
 async function login(
@@ -173,6 +173,98 @@ describe("reports, aging, exports", () => {
     );
     expect(dash.kpis.subscribersOverdueCount).toBe(sum.subscribersOverdueCount);
     expect(dash.arAging.totalBalanceCentavos).toBe(sum.totalOpenCentavos);
+  });
+
+  it("dashboard chart totals equal corresponding report totals", async () => {
+    const dashRes = await app.inject({
+      method: "GET",
+      url: "/dashboard",
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(dashRes.statusCode).toBe(200);
+    const dash = dashRes.json() as {
+      windows: {
+        billingMonths: number;
+        paymentMethodsFromDate: string;
+        paymentMethodsToDate: string;
+        collectorFromDate: string;
+        collectorToDate: string;
+      };
+      billingVsCollection: Array<{
+        billedCentavos: string;
+        collectedCentavos: string;
+      }>;
+      paymentMethods: Array<{ amountCentavos: string }>;
+      arAging: { totalBalanceCentavos: string };
+      collectorPerformance: Array<{ collectedCentavos: string }>;
+    };
+
+    const billed = dash.billingVsCollection.reduce(
+      (s, r) => s + BigInt(r.billedCentavos),
+      0n,
+    );
+    const collected = dash.billingVsCollection.reduce(
+      (s, r) => s + BigInt(r.collectedCentavos),
+      0n,
+    );
+    const paymentTotal = dash.paymentMethods.reduce(
+      (s, r) => s + BigInt(r.amountCentavos),
+      0n,
+    );
+    const collectorTotal = dash.collectorPerformance.reduce(
+      (s, r) => s + BigInt(r.collectedCentavos),
+      0n,
+    );
+
+    const [billingRes, methodsRes, agingRes, collectorsRes] =
+      await Promise.all([
+        app.inject({
+          method: "GET",
+          url: `/reports/billing-vs-collection?months=${dash.windows.billingMonths}`,
+          headers: { authorization: `Bearer ${ownerToken}` },
+        }),
+        app.inject({
+          method: "GET",
+          url: `/reports/payment-methods?page=1&pageSize=100&fromDate=${dash.windows.paymentMethodsFromDate}&toDate=${dash.windows.paymentMethodsToDate}`,
+          headers: { authorization: `Bearer ${ownerToken}` },
+        }),
+        app.inject({
+          method: "GET",
+          url: "/reports/ar-aging?page=1&pageSize=100",
+          headers: { authorization: `Bearer ${ownerToken}` },
+        }),
+        app.inject({
+          method: "GET",
+          url: `/reports/collectors?page=1&pageSize=100&fromDate=${dash.windows.collectorFromDate}&toDate=${dash.windows.collectorToDate}`,
+          headers: { authorization: `Bearer ${ownerToken}` },
+        }),
+      ]);
+
+    expect(billingRes.statusCode).toBe(200);
+    expect(methodsRes.statusCode).toBe(200);
+    expect(agingRes.statusCode).toBe(200);
+    expect(collectorsRes.statusCode).toBe(200);
+
+    const billing = billingRes.json() as {
+      totals: { billedCentavos: string; collectedCentavos: string };
+    };
+    const methods = methodsRes.json() as {
+      totals: { amountCentavos: string };
+    };
+    const aging = agingRes.json() as {
+      summary: { totalBalanceCentavos: string };
+    };
+    const collectors = collectorsRes.json() as {
+      totals: { collectedCentavos: string };
+    };
+
+    expect(billing.totals.billedCentavos).toBe(billed.toString());
+    expect(billing.totals.collectedCentavos).toBe(collected.toString());
+    expect(methods.totals.amountCentavos).toBe(paymentTotal.toString());
+    expect(aging.summary.totalBalanceCentavos).toBe(
+      dash.arAging.totalBalanceCentavos,
+    );
+    expect(collectors.totals.collectedCentavos).toBe(collectorTotal.toString());
   });
 
   it("report ledger closing balance equals sum of ledger debits−credits", async () => {

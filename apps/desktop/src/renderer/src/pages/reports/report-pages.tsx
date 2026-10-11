@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { type ColumnDef } from "@tanstack/react-table";
 import { Link } from "react-router-dom";
-import { formatCentavos } from "@bcis/shared";
+import { formatCentavos, formatPhilippineMobile } from "@bcis/shared";
 import { DataTable } from "@/components/data-table";
 import { ReportShell } from "@/components/report-shell";
 import { AsyncCombobox, type AsyncComboboxOption } from "@/components/async-combobox";
@@ -376,7 +376,14 @@ export function SubscriberMasterReportPage() {
     () => [
       { accessorKey: "accountNumber", header: "Account" },
       { accessorKey: "fullName", header: "Name" },
-      { accessorKey: "contactPhone", header: "Phone" },
+      {
+        accessorKey: "contactPhone",
+        header: "Phone",
+        cell: ({ row }) =>
+          formatPhilippineMobile(
+            (row.original as { contactPhone?: string | null }).contactPhone,
+          ) || "—",
+      },
       { accessorKey: "status", header: "Status" },
       { accessorKey: "areaName", header: "Area" },
       { accessorKey: "collectorName", header: "Collector" },

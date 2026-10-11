@@ -20,23 +20,55 @@ export type ServiceAccountStatus = (typeof SERVICE_ACCOUNT_STATUSES)[number];
 
 const dueDaySchema = z.coerce.number().int().min(1).max(28);
 
+export function normalizePhilippineMobile(value: string): string {
+  const compact = value.trim().replace(/[\s()-]/g, "");
+  if (/^09\d{9}$/.test(compact)) return `+63${compact.slice(1)}`;
+  return compact;
+}
+
+export function formatPhilippineMobile(value: string | null | undefined): string {
+  if (!value) return "";
+  const normalized = normalizePhilippineMobile(value);
+  const match = normalized.match(/^\+63(9\d{2})(\d{3})(\d{4})$/);
+  return match ? `+63 ${match[1]} ${match[2]} ${match[3]}` : value;
+}
+
+export const philippineMobileSchema = z
+  .string()
+  .trim()
+  .transform(normalizePhilippineMobile)
+  .refine(
+    (value) => /^\+639\d{9}$/.test(value),
+    "Enter a valid Philippine mobile number (09XX XXX XXXX or +63 9XX XXX XXXX).",
+  );
+
+const optionalPhilippineMobileSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  philippineMobileSchema.optional(),
+);
+
 export const createSubscriberSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required."),
-  contactPhone: z.string().trim().optional(),
+  contactPhone: optionalPhilippineMobileSchema,
   contactEmail: z.string().trim().email().optional().or(z.literal("")),
   address: z.string().trim().min(1, "Address is required."),
   collectionAreaId: z.string().uuid().optional().nullable(),
   collectorUserId: z.string().uuid().optional().nullable(),
   dueDay: dueDaySchema,
   notes: z.string().trim().optional(),
+  /** Active service plans to subscribe; each creates a service account on save. */
+  servicePlanIds: z.array(z.string().uuid()).default([]),
 });
 
 export type CreateSubscriberInput = z.infer<typeof createSubscriberSchema>;
 
-export const updateSubscriberSchema = createSubscriberSchema.partial().extend({
-  status: z.enum(SUBSCRIBER_STATUSES).optional(),
-  statusReason: z.string().trim().optional(),
-});
+export const updateSubscriberSchema = createSubscriberSchema
+  .omit({ servicePlanIds: true })
+  .partial()
+  .extend({
+    status: z.enum(SUBSCRIBER_STATUSES).optional(),
+    statusReason: z.string().trim().optional(),
+  });
 
 export type UpdateSubscriberInput = z.infer<typeof updateSubscriberSchema>;
 

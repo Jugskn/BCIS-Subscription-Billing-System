@@ -14,8 +14,12 @@
     "test": "pnpm -r test",
     "db:generate": "pnpm --filter @bcis/db generate",
     "db:migrate": "pnpm --filter @bcis/db migrate",
-    "db:seed": "pnpm --filter @bcis/db seed",
-    "db:setup": "pnpm db:migrate && pnpm db:seed"
+    "db:seed": "pnpm --filter @bcis/api exec tsx src/scripts/seed.ts",
+    "db:reset": "pnpm --filter @bcis/db exec tsx src/reset.ts",
+    "db:setup": "pnpm db:migrate && pnpm db:seed",
+    "test:acceptance": "pnpm --filter @bcis/api exec vitest run --config vitest.acceptance.config.ts",
+    "test:concurrency": "pnpm --filter @bcis/api exec tsx src/scripts/concurrency.ts",
+    "build:installer": "pnpm --filter @bcis/desktop build:installer"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",

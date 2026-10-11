@@ -6,7 +6,11 @@ import {
   paginationQuerySchema,
 } from "@bcis/shared";
 import { validationError } from "../lib/errors.js";
-import { listCollectorOptions } from "../services/options-service.js";
+import {
+  listApproverOptions,
+  listCollectorOptions,
+  listTechnicianOptions,
+} from "../services/options-service.js";
 import {
   assignUserRoles,
   createUser,
@@ -24,6 +28,30 @@ const userRoutes: FastifyPluginAsync = async (app) => {
         throw validationError("Invalid options query.", parsed.error);
       }
       return listCollectorOptions(app.db, parsed.data.search);
+    },
+  );
+
+  app.get(
+    "/technicians/options",
+    { preHandler: [app.requirePermission("service.manage")] },
+    async (request) => {
+      const parsed = optionsSearchQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        throw validationError("Invalid options query.", parsed.error);
+      }
+      return listTechnicianOptions(app.db, parsed.data.search);
+    },
+  );
+
+  app.get(
+    "/approvers/options",
+    { preHandler: [app.requirePermission("service.manage")] },
+    async (request) => {
+      const parsed = optionsSearchQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        throw validationError("Invalid options query.", parsed.error);
+      }
+      return listApproverOptions(app.db, parsed.data.search);
     },
   );
 

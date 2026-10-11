@@ -1,6 +1,8 @@
-import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   collectionAreas,
+  serviceAccounts,
+  servicePlans,
   subscribers,
   users,
   type Database,
@@ -9,9 +11,11 @@ import type {
   CreateSubscriberInput,
   UpdateSubscriberInput,
 } from "@bcis/shared";
+import { centavosToString } from "@bcis/shared";
 import { AppError } from "../lib/errors.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { nextAccountNumber } from "../lib/account-number.js";
+import { recordServiceEvent } from "../lib/service-events.js";
 
 function toListItem(
   row: typeof subscribers.$inferSelect,
@@ -210,6 +214,28 @@ export async function createSubscriber(
     }
   }
 
+  const planIds = [...new Set(input.servicePlanIds ?? [])];
+  const planRows =
+    planIds.length > 0
+      ? await db
+          .select({
+            id: servicePlans.id,
+            isActive: servicePlans.isActive,
+            priceCentavos: servicePlans.priceCentavos,
+          })
+          .from(servicePlans)
+          .where(inArray(servicePlans.id, planIds))
+      : [];
+  if (planRows.length !== planIds.length) {
+    throw new AppError(400, "INVALID_PLAN", "One or more service plans were not found.");
+  }
+  if (planRows.some((p) => !p.isActive)) {
+    throw new AppError(400, "PLAN_INACTIVE", "Cannot assign an inactive plan.");
+  }
+  const planById = new Map(planRows.map((p) => [p.id, p]));
+
+  const today = new Date().toISOString().slice(0, 10);
+
   const created = await db.transaction(async (tx) => {
     const accountNumber = await nextAccountNumber(tx, "SUB");
     const [row] = await tx
@@ -240,6 +266,51 @@ export async function createSubscriber(
         status: row.status,
       },
     });
+
+    for (const planId of planIds) {
+      const plan = planById.get(planId)!;
+      const saNumber = await nextAccountNumber(tx, "SVC");
+      const [sa] = await tx
+        .insert(serviceAccounts)
+        .values({
+          accountNumber: saNumber,
+          subscriberId: row.id,
+          servicePlanId: planId,
+          installationAddress: row.address,
+          activationDate: today,
+          billingStartDate: today,
+          dueDay: row.dueDay,
+          currentRateCentavos: plan.priceCentavos,
+          status: "ACTIVE",
+          collectorUserId: row.collectorUserId,
+        })
+        .returning();
+      if (!sa) {
+        throw new AppError(500, "CREATE_FAILED", "Could not create service account.");
+      }
+
+      await recordServiceEvent(tx, {
+        serviceAccountId: sa.id,
+        eventType: "STATUS_CHANGE",
+        oldStatus: null,
+        newStatus: "ACTIVE",
+        reason: "Account created",
+        actorUserId,
+      });
+
+      await writeAuditLog(tx, {
+        actorUserId,
+        action: "service_account.create",
+        entityType: "service_account",
+        entityId: sa.id,
+        newValues: {
+          accountNumber: sa.accountNumber,
+          subscriberId: sa.subscriberId,
+          planId,
+          currentRateCentavos: centavosToString(sa.currentRateCentavos),
+        },
+      });
+    }
 
     return row;
   });

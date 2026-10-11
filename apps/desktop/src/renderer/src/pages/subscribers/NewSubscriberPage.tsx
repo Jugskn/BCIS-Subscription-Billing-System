@@ -4,6 +4,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "react-router-dom";
 import { useCallback, useState } from "react";
+import { formatCentavos, philippineMobileSchema } from "@bcis/shared";
 import {
   AsyncCombobox,
   type AsyncComboboxOption,
@@ -17,13 +18,14 @@ import { applyApiFieldErrors } from "@/lib/api";
 
 const formSchema = z.object({
   fullName: z.string().min(1, "Full name is required."),
-  contactPhone: z.string().optional(),
+  contactPhone: philippineMobileSchema.or(z.literal("")),
   contactEmail: z.string().email().optional().or(z.literal("")),
   address: z.string().min(1, "Address is required."),
   collectionAreaId: z.string().optional(),
   collectorUserId: z.string().optional(),
   dueDay: z.number().int().min(1).max(28),
   notes: z.string().optional(),
+  servicePlanId: z.string().uuid("Select a service to subscribe."),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -36,6 +38,7 @@ export function NewSubscriberPage() {
   const [error, setError] = useState<string | null>(null);
   const [areaLabel, setAreaLabel] = useState("");
   const [collectorLabel, setCollectorLabel] = useState("");
+  const [planLabel, setPlanLabel] = useState("");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -48,6 +51,7 @@ export function NewSubscriberPage() {
       collectorUserId: "",
       dueDay: 15,
       notes: "",
+      servicePlanId: "",
     },
   });
 
@@ -73,6 +77,17 @@ export function NewSubscriberPage() {
     [api],
   );
 
+  const loadPlans = useCallback(
+    async (search: string): Promise<AsyncComboboxOption[]> => {
+      const items = await api.planOptions(search || undefined);
+      return items.map((p) => ({
+        value: p.id,
+        label: `${p.code} — ${p.name} (${formatCentavos(BigInt(p.priceCentavos))})`,
+      }));
+    },
+    [api],
+  );
+
   const createMutation = useMutation({
     mutationFn: (values: FormValues) =>
       api.createSubscriber({
@@ -84,6 +99,7 @@ export function NewSubscriberPage() {
         collectorUserId: values.collectorUserId || null,
         dueDay: values.dueDay,
         notes: values.notes || undefined,
+        servicePlanIds: [values.servicePlanId],
       }),
     onSuccess: async (subscriber) => {
       await qc.invalidateQueries({ queryKey: ["subscribers"] });
@@ -125,7 +141,11 @@ export function NewSubscriberPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="contactPhone">Contact phone</Label>
-              <Input id="contactPhone" {...form.register("contactPhone")} />
+              <Input
+                id="contactPhone"
+                placeholder="09XX XXX XXXX"
+                {...form.register("contactPhone")}
+              />
               {form.formState.errors.contactPhone ? (
                 <p className="text-sm text-danger">
                   {form.formState.errors.contactPhone.message}
@@ -210,6 +230,31 @@ export function NewSubscriberPage() {
               </p>
             ) : null}
           </div>
+        </section>
+
+        <section className="space-y-2">
+          <Label>Service to subscribe *</Label>
+          <Controller
+            control={form.control}
+            name="servicePlanId"
+            render={({ field }) => (
+              <AsyncCombobox
+                value={field.value ?? ""}
+                selectedLabel={planLabel}
+                loadOptions={loadPlans}
+                placeholder="Search service plan…"
+                onChange={(v, opt) => {
+                  field.onChange(v);
+                  setPlanLabel(opt?.label ?? "");
+                }}
+              />
+            )}
+          />
+          {form.formState.errors.servicePlanId ? (
+            <p className="text-sm text-danger">
+              {form.formState.errors.servicePlanId.message}
+            </p>
+          ) : null}
         </section>
 
         <section className="space-y-2">

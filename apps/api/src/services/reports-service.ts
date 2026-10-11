@@ -77,7 +77,7 @@ export function resolveCollectionRange(query: {
 
   const period = query.period ?? "daily";
   let fromDate = today;
-  let toDate = today;
+  const toDate = today;
 
   if (period === "weekly") {
     const d = startOfUtcDay(today);
@@ -752,6 +752,7 @@ export async function auditReport(
     toDate?: string;
     actorUserId?: string;
     action?: string;
+    entityType?: string;
     search?: string;
   },
 ) {
@@ -767,6 +768,11 @@ export async function auditReport(
   }
   if (query.action) {
     conditions.push(sql`${auditLogs.action} ilike ${`%${query.action}%`}`);
+  }
+  if (query.entityType) {
+    conditions.push(
+      sql`${auditLogs.entityType} ilike ${`%${query.entityType}%`}`,
+    );
   }
   if (query.search) {
     const q = `%${query.search}%`;
@@ -902,6 +908,7 @@ export async function getRouteSheet(
     const bal = bySub.get(s.id) ?? { current: 0n, arrears: 0n };
     const total = bal.current + bal.arrears;
     return {
+      subscriberId: s.id,
       accountNumber: s.accountNumber,
       fullName: s.fullName,
       address: s.address,

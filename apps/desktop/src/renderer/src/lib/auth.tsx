@@ -34,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [locked, setLocked] = useState(false);
+  const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState(30);
 
   const api = useMemo(
     () => new ApiClient(() => apiBaseUrl, () => token),
@@ -43,24 +44,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let resolvedBaseUrl = DEFAULT_API_BASE_URL;
       try {
         if (window.bcis?.getConfig) {
           const cfg = await window.bcis.getConfig();
-          if (!cancelled) setApiBaseUrl(cfg.apiBaseUrl);
+          resolvedBaseUrl = cfg.apiBaseUrl;
+          if (!cancelled) setApiBaseUrl(resolvedBaseUrl);
         }
       } catch {
         // browser fallback during vite-only preview
       }
 
       const savedToken = sessionStorage.getItem(TOKEN_KEY);
-      const savedUser = sessionStorage.getItem(USER_KEY);
-      if (savedToken && savedUser) {
-        setToken(savedToken);
+      if (savedToken) {
         try {
-          setUser(JSON.parse(savedUser) as SessionUser);
+          const sessionApi = new ApiClient(
+            () => resolvedBaseUrl,
+            () => savedToken,
+          );
+          const profile = await sessionApi.me();
+          if (!cancelled) {
+            sessionStorage.setItem(USER_KEY, JSON.stringify(profile.user));
+            setToken(savedToken);
+            setUser(profile.user);
+            if (profile.sessionTimeoutMinutes) {
+              setSessionTimeoutMinutes(profile.sessionTimeoutMinutes);
+            }
+          }
         } catch {
           sessionStorage.removeItem(TOKEN_KEY);
           sessionStorage.removeItem(USER_KEY);
+          if (!cancelled) {
+            setToken(null);
+            setUser(null);
+          }
         }
       }
       if (!cancelled) setReady(true);
@@ -90,22 +107,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (username: string, password: string) => {
       const result = await api.login(username, password);
       persist(result.token, result.user);
+      if (result.sessionTimeoutMinutes) {
+        setSessionTimeoutMinutes(result.sessionTimeoutMinutes);
+      }
     },
     [api, persist],
   );
 
   const logout = useCallback(async () => {
+    const serverLogout = token ? api.logout() : Promise.resolve();
+    clear();
     try {
-      if (token) await api.logout();
+      await serverLogout;
     } catch {
-      // still clear local session
+      // local session is already cleared
     }
     try {
       await window.bcis?.logout?.();
     } catch {
       // ignore
     }
-    clear();
   }, [api, clear, token]);
 
   const lock = useCallback(() => {
@@ -118,6 +139,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!user) return;
       const result = await api.login(user.username, password);
       persist(result.token, result.user);
+      if (result.sessionTimeoutMinutes) {
+        setSessionTimeoutMinutes(result.sessionTimeoutMinutes);
+      }
     },
     [api, persist, user],
   );
@@ -127,6 +151,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       Boolean(user?.permissions.includes(permission)),
     [user],
   );
+
+  useEffect(() => {
+    if (!user || locked) return;
+    const ms = Math.max(1, sessionTimeoutMinutes) * 60_000;
+    let timer = window.setTimeout(() => setLocked(true), ms);
+    const bump = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        setLocked(true);
+        void window.bcis?.lockSession?.();
+      }, ms);
+    };
+    const events: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+    ];
+    for (const ev of events) window.addEventListener(ev, bump, { passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      for (const ev of events) window.removeEventListener(ev, bump);
+    };
+  }, [user, locked, sessionTimeoutMinutes]);
 
   const value: AuthState = {
     user,

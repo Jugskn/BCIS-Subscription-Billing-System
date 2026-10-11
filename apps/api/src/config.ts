@@ -22,7 +22,11 @@ const envSchema = z.object({
   LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   LOGIN_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
   UPLOAD_DIR: z.string().default("./uploads"),
+  ATTACHMENTS_DIR: z.string().optional(),
   MAX_PROOF_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
+  BACKUPS_DIR: z.string().default("./storage/backups"),
+  PG_BIN_DIR: z.string().optional(),
+  APP_VERSION: z.string().default("0.1.0"),
   /** Comma-separated allowed Origins. Empty/unset → DEFAULT_CORS_ORIGINS. Never "*". */
   CORS_ORIGINS: z.string().optional(),
 });

@@ -41,3 +41,9 @@ export const collectorOptionSchema = z.object({
 });
 
 export type CollectorOption = z.infer<typeof collectorOptionSchema>;
+
+export const technicianOptionSchema = collectorOptionSchema;
+export type TechnicianOption = z.infer<typeof technicianOptionSchema>;
+
+export const approverOptionSchema = collectorOptionSchema;
+export type ApproverOption = z.infer<typeof approverOptionSchema>;

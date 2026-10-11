@@ -32,7 +32,10 @@ import {
 import { AppError } from "../lib/errors.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { nextAccountNumber } from "../lib/account-number.js";
-import { getGraceDays } from "./settings-service.js";
+import {
+  getGraceDays,
+  getInvoiceNumberPrefix,
+} from "./settings-service.js";
 
 type Tx = Parameters<Parameters<Database["db"]["transaction"]>[0]>[0];
 
@@ -236,7 +239,8 @@ export async function generateBillingForPeriod(
       const unapplied = creditRow?.unappliedCentavos ?? 0n;
       const creditResult = applyCreditToInvoice(totals.totalCentavos, unapplied);
 
-      const invoiceNumber = await nextAccountNumber(tx, "INV");
+      const invoicePrefix = await getInvoiceNumberPrefix(tx);
+      const invoiceNumber = await nextAccountNumber(tx, invoicePrefix);
 
       const [invoice] = await tx
         .insert(invoices)
@@ -283,18 +287,10 @@ export async function generateBillingForPeriod(
         });
       }
 
+      // Credit was already ledger-credited when the advance payment posted.
+      // Applying it here only reduces subscriber_credits + invoice balance —
+      // do not post another CREDIT_APPLICATION row (would double-count).
       if (creditResult.creditAppliedCentavos > 0n) {
-        await tx.insert(ledgerEntries).values({
-          subscriberId: account.subscriberId,
-          serviceAccountId: account.id,
-          entryDate: todayIso(),
-          referenceType: "CREDIT_APPLICATION",
-          referenceId: invoice.id,
-          description: `Credit applied to ${invoiceNumber}`,
-          debitCentavos: 0n,
-          creditCentavos: creditResult.creditAppliedCentavos,
-        });
-
         if (creditRow) {
           await tx
             .update(subscriberCredits)

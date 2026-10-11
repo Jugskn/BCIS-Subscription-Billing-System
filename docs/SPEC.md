@@ -165,7 +165,7 @@ Overdue accounts	10+ spanning multiple aging buckets
 Reversal/void	At least 1
 Suspension/reconnection	At least 2 scenarios
 
-Use synthetic data only: no real names, phone numbers, GCash details, or passwords.
+Use synthetic data only: Real-world names, phone numbers, GCash details, or passwords.
 
 Critical failures (never do these)
 

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { UserIdentity } from "@/components/user-identity";
 
 type NavChild = {
   to: string;
@@ -141,7 +142,29 @@ const NAV: NavItem[] = [
     to: "/administration",
     label: "Administration",
     icon: Settings,
-    permission: "user.manage",
+    children: [
+      { to: "/administration/users", label: "Users", permission: "user.manage" },
+      {
+        to: "/administration/roles",
+        label: "Roles",
+        permission: "settings.view",
+      },
+      {
+        to: "/administration/settings",
+        label: "Settings",
+        permission: "settings.view",
+      },
+      {
+        to: "/administration/audit",
+        label: "Audit Log",
+        permission: "audit.view",
+      },
+      {
+        to: "/administration/backups",
+        label: "System & Backup",
+        permission: "backup.create",
+      },
+    ],
   },
 ];
 
@@ -174,9 +197,6 @@ export function Sidebar() {
         </div>
         <div className="mt-1 text-sm font-semibold text-ink">
           Subscription Billing
-        </div>
-        <div className="mt-2 truncate text-xs text-muted">
-          {user?.fullName}
         </div>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-2">
@@ -234,6 +254,11 @@ export function Sidebar() {
           );
         })}
       </nav>
+      {user ? (
+        <div className="border-t border-border p-3">
+          <UserIdentity user={user} />
+        </div>
+      ) : null}
     </aside>
   );
 }

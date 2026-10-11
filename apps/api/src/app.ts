@@ -6,6 +6,7 @@ import {
   isAppError,
   type ValidationIssue,
 } from "./lib/errors.js";
+import { getWriteLockReason, isWriteLocked } from "./lib/write-lock.js";
 import dbPlugin from "./plugins/db.js";
 import authPlugin from "./plugins/auth.js";
 import healthRoutes from "./routes/health.js";
@@ -20,6 +21,16 @@ import paymentRoutes from "./routes/payments.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import receivablesRoutes from "./routes/receivables.js";
 import reportsRoutes from "./routes/reports.js";
+import collectionBatchRoutes from "./routes/collection-batches.js";
+import suspensionRoutes from "./routes/suspensions.js";
+import backupRoutes from "./routes/backups.js";
+import settingsRoutes from "./routes/settings.js";
+
+declare module "fastify" {
+  interface FastifyInstance {
+    config: AppConfig;
+  }
+}
 
 export async function buildApp(config: AppConfig) {
   const app = Fastify({
@@ -33,9 +44,12 @@ export async function buildApp(config: AppConfig) {
         "passwordHash",
         "*.password",
         "*.passwordHash",
+        "PGPASSWORD",
       ],
     },
   });
+
+  app.decorate("config", config);
 
   // Must be registered before encapsulated route plugins so children inherit it.
   app.setErrorHandler((error, request, reply) => {
@@ -118,6 +132,21 @@ export async function buildApp(config: AppConfig) {
       "Accept",
     ],
   });
+
+  app.addHook("onRequest", async (request, reply) => {
+    if (!isWriteLocked()) return;
+    const method = request.method.toUpperCase();
+    if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
+    if (request.url.startsWith("/backups")) return;
+    if (request.url.startsWith("/health")) return;
+    return reply.status(503).send({
+      error: {
+        code: "WRITE_LOCKED",
+        message: getWriteLockReason(),
+      },
+    });
+  });
+
   await app.register(dbPlugin, { connectionString: config.DATABASE_URL });
   await app.register(authPlugin, { secret: config.JWT_SECRET });
 
@@ -139,6 +168,10 @@ export async function buildApp(config: AppConfig) {
   await app.register(dashboardRoutes);
   await app.register(receivablesRoutes);
   await app.register(reportsRoutes);
+  await app.register(collectionBatchRoutes);
+  await app.register(suspensionRoutes);
+  await app.register(backupRoutes);
+  await app.register(settingsRoutes);
 
   return app;
 }

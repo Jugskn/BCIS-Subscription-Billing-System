@@ -20,6 +20,7 @@ export type SessionUser = z.infer<typeof sessionUserSchema>;
 export const loginResponseSchema = z.object({
   token: z.string(),
   user: sessionUserSchema,
+  sessionTimeoutMinutes: z.number().int().positive().optional(),
 });
 
 export type LoginResponse = z.infer<typeof loginResponseSchema>;

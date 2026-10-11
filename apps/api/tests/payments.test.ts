@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
+  auditLogs,
   createDb,
   invoices,
   ledgerEntries,
   paymentAllocations,
+  paymentReversals,
   payments,
   receipts,
   subscriberCredits,
@@ -122,37 +124,97 @@ describe("payments API", () => {
     return invoice!;
   }
 
-  it("AT-01 exact payment", async () => {
-    // Create subscriber with known 999 rate via adjust after generating, or pay exact balance.
-    const period = "2026-01";
-    const inv = await createInvoice(period);
-    const amount = inv.balanceCentavos;
-
-    const preview = await app.inject({
+  async function createPlan(pricePesos: string) {
+    const stamp = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    const priceTag = pricePesos.replaceAll(".", "");
+    const res = await app.inject({
       method: "POST",
-      url: "/payments/preview",
+      url: "/service-plans",
       headers: { authorization: `Bearer ${ownerToken}` },
       payload: {
-        subscriberId,
-        amount: (Number(amount) / 100).toFixed(2),
+        serviceTypeCode: "INTERNET",
+        code: `AT${priceTag}${stamp}`,
+        name: `AT Plan ${pricePesos} ${stamp}`,
+        price: pricePesos,
+        speedMbps: 50,
       },
     });
-    expect(preview.statusCode).toBe(200);
-    const previewBody = preview.json() as {
-      unallocatedCentavos: string;
-      allocations: { remainingBalanceCentavos: string; resultingStatus: string }[];
-    };
-    expect(previewBody.unallocatedCentavos).toBe("0");
-    expect(previewBody.allocations[0]!.remainingBalanceCentavos).toBe("0");
-    expect(previewBody.allocations[0]!.resultingStatus).toBe("PAID");
+    expect(res.statusCode).toBe(201);
+    return (res.json() as { id: string }).id;
+  }
+
+  async function freshSubscriber(
+    name: string,
+    opts?: { planId?: string; dueDay?: number },
+  ) {
+    const subRes = await app.inject({
+      method: "POST",
+      url: "/subscribers",
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        fullName: name,
+        address: `${name} Address`,
+        dueDay: opts?.dueDay ?? 15,
+      },
+    });
+    const subId = (subRes.json() as { id: string }).id;
+    await app.inject({
+      method: "POST",
+      url: "/service-accounts",
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        subscriberId: subId,
+        servicePlanId: opts?.planId ?? planId,
+        installationAddress: `${name} Address`,
+        activationDate: "2025-01-01",
+        billingStartDate: "2025-01-01",
+        dueDay: opts?.dueDay ?? 15,
+      },
+    });
+    return subId;
+  }
+
+  async function invoiceFor(
+    subId: string,
+    billingPeriod: string,
+  ): Promise<{ id: string; balanceCentavos: string; status: string }> {
+    const gen = await app.inject({
+      method: "POST",
+      url: "/billing/generate",
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: { billingPeriod },
+    });
+    expect([200, 201]).toContain(gen.statusCode);
+    const list = await app.inject({
+      method: "GET",
+      url: `/invoices?subscriberId=${subId}&billingPeriod=${billingPeriod}&page=1&pageSize=5`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    const inv = (
+      list.json() as {
+        items: { id: string; balanceCentavos: string; status: string }[];
+      }
+    ).items[0];
+    expect(inv).toBeDefined();
+    return inv!;
+  }
+
+  it("AT-01 Exact payment", async () => {
+    // SPEC: Invoice 999; pay 999 → Remaining 0; PAID; ledger balanced; receipt created
+    const atPlanId = await createPlan("999.00");
+    const subId = await freshSubscriber("AT01 Exact Subscriber", {
+      planId: atPlanId,
+    });
+    const inv = await invoiceFor(subId, "2026-11");
+    expect(inv.balanceCentavos).toBe(pesosToCentavos("999").toString());
 
     const post = await app.inject({
       method: "POST",
       url: "/payments",
       headers: { authorization: `Bearer ${ownerToken}` },
       payload: {
-        subscriberId,
-        amount: (Number(amount) / 100).toFixed(2),
+        subscriberId: subId,
+        amount: "999.00",
         method: "Cash",
         idempotencyKey: key("at01"),
       },
@@ -160,11 +222,18 @@ describe("payments API", () => {
     expect(post.statusCode).toBe(201);
     const body = post.json() as {
       payment: { id: string; status: string };
-      receipt: { receiptNumber: string; status: string };
+      receipt: {
+        receiptNumber: string;
+        status: string;
+        serviceHeadline: string | null;
+        allocations: { planName: string }[];
+      };
     };
     expect(body.payment.status).toBe("POSTED");
     expect(body.receipt.status).toBe("ISSUED");
     expect(body.receipt.receiptNumber).toMatch(/^RCPT-/);
+    expect(body.receipt.serviceHeadline).toBeTruthy();
+    expect(body.receipt.allocations[0]?.planName).toBeTruthy();
 
     const invRes = await app.inject({
       method: "GET",
@@ -178,63 +247,34 @@ describe("payments API", () => {
     };
     expect(invBody.balanceCentavos).toBe("0");
     expect(invBody.status).toBe("PAID");
-    expect(invBody.paidCentavos).toBe(amount);
+    expect(invBody.paidCentavos).toBe(pesosToCentavos("999").toString());
 
     const ledger = await app.inject({
       method: "GET",
-      url: `/subscribers/${subscriberId}/ledger?page=1&pageSize=100`,
+      url: `/subscribers/${subId}/ledger?page=1&pageSize=100`,
       headers: { authorization: `Bearer ${ownerToken}` },
     });
-    const entries = (ledger.json() as { items: { balanceCentavos: string }[] }).items;
+    const entries = (
+      ledger.json() as {
+        items: { debitCentavos: string; creditCentavos: string; balanceCentavos: string }[];
+      }
+    ).items;
     expect(entries.length).toBeGreaterThan(0);
+    const debit = entries.reduce((s, e) => s + BigInt(e.debitCentavos), 0n);
+    const credit = entries.reduce((s, e) => s + BigInt(e.creditCentavos), 0n);
+    expect(debit - credit).toBe(0n);
+    expect(entries[entries.length - 1]!.balanceCentavos).toBe("0");
   });
 
-  async function freshSubscriber(name: string) {
-    const subRes = await app.inject({
-      method: "POST",
-      url: "/subscribers",
-      headers: { authorization: `Bearer ${ownerToken}` },
-      payload: {
-        fullName: name,
-        address: `${name} Address`,
-        dueDay: 15,
-      },
+  it("AT-02 Partial payment", async () => {
+    // SPEC: Invoice 999; pay 500 → Remaining 499; PARTIALLY_PAID
+    const atPlanId = await createPlan("999.00");
+    const subId = await freshSubscriber("AT02 Partial Subscriber", {
+      planId: atPlanId,
     });
-    const subId = (subRes.json() as { id: string }).id;
-    await app.inject({
-      method: "POST",
-      url: "/service-accounts",
-      headers: { authorization: `Bearer ${ownerToken}` },
-      payload: {
-        subscriberId: subId,
-        servicePlanId: planId,
-        installationAddress: `${name} Address`,
-        activationDate: "2025-01-01",
-        billingStartDate: "2025-01-01",
-        dueDay: 15,
-      },
-    });
-    return subId;
-  }
-
-  it("AT-02 partial payment", async () => {
-    const subId = await freshSubscriber("Partial Pay Subscriber");
-    const period = "2026-02";
-    await app.inject({
-      method: "POST",
-      url: "/billing/generate",
-      headers: { authorization: `Bearer ${ownerToken}` },
-      payload: { billingPeriod: period },
-    });
-    const list = await app.inject({
-      method: "GET",
-      url: `/invoices?subscriberId=${subId}&billingPeriod=${period}&page=1&pageSize=5`,
-      headers: { authorization: `Bearer ${ownerToken}` },
-    });
-    const inv = (list.json() as { items: { id: string; balanceCentavos: string }[] }).items[0]!;
-    const balance = BigInt(inv.balanceCentavos);
-    const pay = balance > pesosToCentavos("500") ? pesosToCentavos("500") : balance / 2n;
-    const remaining = balance - pay;
+    // Future period so status stays PARTIALLY_PAID (not OVERDUE).
+    const inv = await invoiceFor(subId, "2026-12");
+    expect(inv.balanceCentavos).toBe(pesosToCentavos("999").toString());
 
     const post = await app.inject({
       method: "POST",
@@ -242,7 +282,7 @@ describe("payments API", () => {
       headers: { authorization: `Bearer ${ownerToken}` },
       payload: {
         subscriberId: subId,
-        amount: (Number(pay) / 100).toFixed(2),
+        amount: "500.00",
         method: "Cash",
         idempotencyKey: key("at02"),
       },
@@ -259,32 +299,43 @@ describe("payments API", () => {
       status: string;
       paidCentavos: string;
     };
-    expect(invBody.balanceCentavos).toBe(remaining.toString());
-    expect(BigInt(invBody.paidCentavos)).toBe(pay);
-    // Past-due invoices surface as OVERDUE while still partially paid.
-    expect(["PARTIALLY_PAID", "OVERDUE"]).toContain(invBody.status);
-  });
+    expect(invBody.balanceCentavos).toBe(pesosToCentavos("499").toString());
+    expect(invBody.paidCentavos).toBe(pesosToCentavos("500").toString());
+    expect(invBody.status).toBe("PARTIALLY_PAID");
 
-  it("AT-03 advance payment leaves subscriber credit", async () => {
     const config = loadConfig();
     const { db, client } = createDb(config.DATABASE_URL);
-    const subId = await freshSubscriber("Advance Pay Subscriber");
+    const allocs = await db
+      .select()
+      .from(paymentAllocations)
+      .where(eq(paymentAllocations.invoiceId, inv.id));
+    expect(allocs).toHaveLength(1);
+    expect(allocs[0]!.amountCentavos).toBe(pesosToCentavos("500"));
 
-    const period = "2026-03";
-    await app.inject({
-      method: "POST",
-      url: "/billing/generate",
-      headers: { authorization: `Bearer ${ownerToken}` },
-      payload: { billingPeriod: period },
-    });
-    const list = await app.inject({
+    const ledger = await app.inject({
       method: "GET",
-      url: `/invoices?subscriberId=${subId}&billingPeriod=${period}&page=1&pageSize=5`,
+      url: `/subscribers/${subId}/ledger?page=1&pageSize=100`,
       headers: { authorization: `Bearer ${ownerToken}` },
     });
-    const inv = (list.json() as { items: { id: string; balanceCentavos: string }[] }).items[0]!;
-    const balance = BigInt(inv.balanceCentavos);
-    const pay = balance + pesosToCentavos("2000");
+    const entries = (
+      ledger.json() as { items: { balanceCentavos: string }[] }
+    ).items;
+    expect(entries[entries.length - 1]!.balanceCentavos).toBe(
+      pesosToCentavos("499").toString(),
+    );
+    await client.end({ timeout: 5 });
+  });
+
+  it("AT-03 Advance payment", async () => {
+    // SPEC: Monthly 1,000; pay 3,000 → allocate 1,000; credit 2,000; no value lost
+    const config = loadConfig();
+    const { db, client } = createDb(config.DATABASE_URL);
+    const atPlanId = await createPlan("1000.00");
+    const subId = await freshSubscriber("AT03 Advance Subscriber", {
+      planId: atPlanId,
+    });
+    const inv = await invoiceFor(subId, "2026-11");
+    expect(inv.balanceCentavos).toBe(pesosToCentavos("1000").toString());
 
     const post = await app.inject({
       method: "POST",
@@ -292,7 +343,7 @@ describe("payments API", () => {
       headers: { authorization: `Bearer ${ownerToken}` },
       payload: {
         subscriberId: subId,
-        amount: (Number(pay) / 100).toFixed(2),
+        amount: "3000.00",
         method: "Cash",
         idempotencyKey: key("at03"),
       },
@@ -301,8 +352,14 @@ describe("payments API", () => {
     const body = post.json() as {
       payment: { unallocatedCentavos: string; amountCentavos: string };
     };
-    expect(body.payment.unallocatedCentavos).toBe(pesosToCentavos("2000").toString());
-    expect(BigInt(body.payment.amountCentavos)).toBe(pay);
+    expect(body.payment.amountCentavos).toBe(pesosToCentavos("3000").toString());
+    expect(body.payment.unallocatedCentavos).toBe(
+      pesosToCentavos("2000").toString(),
+    );
+    expect(
+      BigInt(body.payment.amountCentavos) -
+        BigInt(body.payment.unallocatedCentavos),
+    ).toBe(pesosToCentavos("1000"));
 
     const [credit] = await db
       .select()
@@ -316,46 +373,26 @@ describe("payments API", () => {
       url: `/invoices/${inv.id}`,
       headers: { authorization: `Bearer ${ownerToken}` },
     });
-    expect((invRes.json() as { status: string }).status).toBe("PAID");
+    expect((invRes.json() as { status: string; balanceCentavos: string }).status).toBe(
+      "PAID",
+    );
+    expect(
+      (invRes.json() as { balanceCentavos: string }).balanceCentavos,
+    ).toBe("0");
 
     await client.end({ timeout: 5 });
   });
 
-  it("AT-04 oldest-first arrears", async () => {
-    // Fresh subscriber so only Aug/Sep invoices matter.
-    const subRes = await app.inject({
-      method: "POST",
-      url: "/subscribers",
-      headers: { authorization: `Bearer ${ownerToken}` },
-      payload: {
-        fullName: "Arrears Test Subscriber",
-        address: "Arrears Lane",
-        dueDay: 15,
-      },
-    });
-    const subId = (subRes.json() as { id: string }).id;
-    await app.inject({
-      method: "POST",
-      url: "/service-accounts",
-      headers: { authorization: `Bearer ${ownerToken}` },
-      payload: {
-        subscriberId: subId,
-        servicePlanId: planId,
-        installationAddress: "Arrears Lane",
-        activationDate: "2025-01-01",
-        billingStartDate: "2025-01-01",
-        dueDay: 15,
-      },
+  it("AT-04 Oldest-first arrears", async () => {
+    // SPEC: Aug 999 + Sep 999; pay 1,200 → Aug 0; Sep 798 remaining
+    const atPlanId = await createPlan("999.00");
+    const subId = await freshSubscriber("AT04 Arrears Subscriber", {
+      planId: atPlanId,
     });
 
     for (const period of ["2025-08", "2025-09"]) {
-      const gen = await app.inject({
-        method: "POST",
-        url: "/billing/generate",
-        headers: { authorization: `Bearer ${ownerToken}` },
-        payload: { billingPeriod: period },
-      });
-      expect([200, 201]).toContain(gen.statusCode);
+      const inv = await invoiceFor(subId, period);
+      expect(inv.balanceCentavos).toBe(pesosToCentavos("999").toString());
     }
 
     const list = await app.inject({
@@ -372,8 +409,6 @@ describe("payments API", () => {
 
     const aug = items.find((i) => i.billingPeriod === "2025-08")!;
     const sep = items.find((i) => i.billingPeriod === "2025-09")!;
-    const augBal = BigInt(aug.balanceCentavos);
-    const pay = augBal + pesosToCentavos("201");
 
     const post = await app.inject({
       method: "POST",
@@ -381,7 +416,7 @@ describe("payments API", () => {
       headers: { authorization: `Bearer ${ownerToken}` },
       payload: {
         subscriberId: subId,
-        amount: (Number(pay) / 100).toFixed(2),
+        amount: "1200.00",
         method: "Cash",
         idempotencyKey: key("at04"),
       },
@@ -398,14 +433,16 @@ describe("payments API", () => {
       url: `/invoices/${sep.id}`,
       headers: { authorization: `Bearer ${ownerToken}` },
     });
-    expect((augAfter.json() as { balanceCentavos: string }).balanceCentavos).toBe("0");
-    const sepRemaining = BigInt(sep.balanceCentavos) - pesosToCentavos("201");
+    expect((augAfter.json() as { balanceCentavos: string }).balanceCentavos).toBe(
+      "0",
+    );
     expect((sepAfter.json() as { balanceCentavos: string }).balanceCentavos).toBe(
-      sepRemaining.toString(),
+      pesosToCentavos("798").toString(),
     );
   });
 
-  it("AT-05 duplicate GCash reference is blocked", async () => {
+  it("AT-05 Duplicate GCash ref", async () => {
+    // SPEC: Post already-used verified ref → blocked
     const ref = `GCASH-DUP-${Date.now()}`;
 
     async function postGCash(idem: string) {
@@ -428,44 +465,45 @@ describe("payments API", () => {
     const first = await postGCash(key("gcash1"));
     expect(first.statusCode).toBe(201);
     expect((first.json() as { status: string }).status).toBe("PENDING");
+    const paymentId = (first.json() as { id: string }).id;
+
+    // Screenshot/pending alone must not allocate.
+    const config = loadConfig();
+    const { db, client } = createDb(config.DATABASE_URL);
+    const pendingAllocs = await db
+      .select()
+      .from(paymentAllocations)
+      .where(eq(paymentAllocations.paymentId, paymentId));
+    expect(pendingAllocs).toHaveLength(0);
+
+    const verify = await app.inject({
+      method: "POST",
+      url: `/payments/${paymentId}/verify`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(verify.statusCode).toBe(200);
+    expect((verify.json() as { payment: { status: string } }).payment.status).toBe(
+      "VERIFIED",
+    );
 
     const second = await postGCash(key("gcash2"));
     expect(second.statusCode).toBe(409);
     expect((second.json() as { error: { code: string } }).error.code).toBe(
       "DUPLICATE_GCASH_REF",
     );
-
-    // Image alone never marks paid — status still PENDING, no allocations.
-    const paymentId = (first.json() as { id: string }).id;
-    const config = loadConfig();
-    const { db, client } = createDb(config.DATABASE_URL);
-    const allocs = await db
-      .select()
-      .from(paymentAllocations)
-      .where(eq(paymentAllocations.paymentId, paymentId));
-    expect(allocs).toHaveLength(0);
     await client.end({ timeout: 5 });
   });
 
-  it("AT-06 payment reversal restores balances and voids receipt", async () => {
-    const subId = await freshSubscriber("Reversal Pay Subscriber");
-    const period = "2026-04";
-    const gen = await app.inject({
-      method: "POST",
-      url: "/billing/generate",
-      headers: { authorization: `Bearer ${ownerToken}` },
-      payload: { billingPeriod: period },
+  it("AT-06 Payment reversal", async () => {
+    // SPEC: Reverse incorrect payment → original visible; linked reversal;
+    // balances restored; actor/reason audited
+    const atPlanId = await createPlan("999.00");
+    const subId = await freshSubscriber("AT06 Reversal Subscriber", {
+      planId: atPlanId,
     });
-    expect([200, 201]).toContain(gen.statusCode);
-
-    const list = await app.inject({
-      method: "GET",
-      url: `/invoices?subscriberId=${subId}&billingPeriod=${period}&page=1&pageSize=5`,
-      headers: { authorization: `Bearer ${ownerToken}` },
-    });
-    const inv = (list.json() as { items: { id: string; balanceCentavos: string }[] }).items[0]!;
+    const inv = await invoiceFor(subId, "2026-11");
     const balanceBefore = inv.balanceCentavos;
-    expect(BigInt(balanceBefore)).toBeGreaterThan(0n);
+    expect(balanceBefore).toBe(pesosToCentavos("999").toString());
 
     const post = await app.inject({
       method: "POST",
@@ -473,7 +511,7 @@ describe("payments API", () => {
       headers: { authorization: `Bearer ${ownerToken}` },
       payload: {
         subscriberId: subId,
-        amount: (Number(balanceBefore) / 100).toFixed(2),
+        amount: "999.00",
         method: "BankTransfer",
         idempotencyKey: key("at06"),
       },
@@ -498,7 +536,17 @@ describe("payments API", () => {
     };
     expect(reversed.status).toBe("REVERSED");
     expect(reversed.reversal?.reason).toBe("Incorrect amount entered");
+    expect(reversed.reversal?.id).toBeTruthy();
     expect(reversed.receiptStatus).toBe("VOID");
+
+    // Original payment remains visible as REVERSED (not deleted).
+    const original = await app.inject({
+      method: "GET",
+      url: `/payments/${paymentId}`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+    expect(original.statusCode).toBe(200);
+    expect((original.json() as { status: string }).status).toBe("REVERSED");
 
     const invAfter = await app.inject({
       method: "GET",
@@ -509,7 +557,6 @@ describe("payments API", () => {
       balanceBefore,
     );
 
-    // Receipt number stays reserved (still exists as VOID).
     const config = loadConfig();
     const { db, client } = createDb(config.DATABASE_URL);
     const [rcpt] = await db
@@ -518,6 +565,29 @@ describe("payments API", () => {
       .where(eq(receipts.receiptNumber, receiptNumber))
       .limit(1);
     expect(rcpt!.status).toBe("VOID");
+
+    const [link] = await db
+      .select()
+      .from(paymentReversals)
+      .where(eq(paymentReversals.originalPaymentId, paymentId))
+      .limit(1);
+    expect(link).toBeTruthy();
+    expect(link!.reason).toBe("Incorrect amount entered");
+
+    const [audit] = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.action, "payment.reverse"),
+          eq(auditLogs.entityId, paymentId),
+        ),
+      )
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(1);
+    expect(audit).toBeTruthy();
+    expect(audit!.actorUserId).toBeTruthy();
+    expect(audit!.reason).toBe("Incorrect amount entered");
 
     const ledgerRows = await db
       .select()
@@ -528,7 +598,7 @@ describe("payments API", () => {
     await client.end({ timeout: 5 });
   });
 
-  it("AT-09 parallel posting yields unique receipt numbers and no double allocation", async () => {
+  it("AT-09 Concurrent users", async () => {
     const subRes = await app.inject({
       method: "POST",
       url: "/subscribers",

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { formatCentavos } from "@bcis/shared";
 import { AsyncCombobox, type AsyncComboboxOption } from "@/components/async-combobox";
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,21 @@ import { ApiClientError } from "@/lib/api";
 
 export function RouteSheetPrintPage() {
   const { api, can } = useAuth();
-  const [areaId, setAreaId] = useState("");
+  const [searchParams] = useSearchParams();
+  const [areaId, setAreaId] = useState(
+    () => searchParams.get("collectionAreaId") ?? "",
+  );
   const [areaLabel, setAreaLabel] = useState("");
+  const collectorUserId = searchParams.get("collectorUserId") ?? undefined;
 
   const q = useQuery({
     queryKey: ["route-sheet", areaId],
-    queryFn: () => api.getRouteSheet({ collectionAreaId: areaId }),
+    queryFn: () => api.getRouteSheet({ collectionAreaId: areaId, collectorUserId }),
     enabled: Boolean(areaId) && can("report.view"),
+  });
+  const companyQuery = useQuery({
+    queryKey: ["company-profile"],
+    queryFn: () => api.getCompanyProfile(),
   });
 
   const loadAreas = async (search: string): Promise<AsyncComboboxOption[]> => {
@@ -85,8 +93,11 @@ export function RouteSheetPrintPage() {
         <article className="border border-border bg-surface p-8 print:border-0">
           <header className="mb-6 border-b border-border pb-4 text-center">
             <p className="text-xs uppercase tracking-wide text-muted">
-              Bukidnon Cable and Internet Services
+              {companyQuery.data?.companyName || "BCIS"}
             </p>
+            {companyQuery.data?.address ? (
+              <p className="mt-1 text-xs text-muted">{companyQuery.data.address}</p>
+            ) : null}
             <h1 className="mt-1 text-2xl font-semibold text-ink">
               Collection Route Sheet
             </h1>
